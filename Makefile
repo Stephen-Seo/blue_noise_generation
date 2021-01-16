@@ -1,5 +1,5 @@
 
-COMMON_FLAGS=-Wall -Wextra -Wpedantic -std=c++17
+COMMON_FLAGS=-Wall -Wextra -Wpedantic -std=c++17 -lpthread
 ifdef DEBUG
 	CPPFLAGS=${COMMON_FLAGS} -g -O0
 else
