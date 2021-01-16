@@ -1,0 +1,4 @@
+src/*.o
+Dithering
+
+compile_commands.json
