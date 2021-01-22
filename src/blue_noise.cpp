@@ -3,10 +3,6 @@
 #include <random>
 #include <cassert>
 #include <iostream>
-#include <condition_variable>
-#include <mutex>
-#include <thread>
-#include <chrono>
 
 #ifndef NDEBUG
 # include <cstdio>
@@ -169,6 +165,8 @@ std::vector<bool> dither::blue_noise(std::size_t width, std::size_t height, std:
     std::size_t iterations = 0;
 //#endif
 
+    std::size_t filter_size = (width + height) / 2;
+
     while(true) {
 //#ifndef NDEBUG
 //        if(++iterations % 10 == 0) {
@@ -176,57 +174,8 @@ std::vector<bool> dither::blue_noise(std::size_t width, std::size_t height, std:
 //        }
 //#endif
         // get filter values
-        if(threads == 1) {
-            for(std::size_t y = 0; y < height; ++y) {
-                for(std::size_t x = 0; x < width; ++x) {
-                    filter_out[internal::twoToOne(x, y, width)] =
-                        internal::filter(pbp, x, y, width, height);
-                }
-            }
-        } else {
-            if(threads == 0) {
-                threads = 10;
-            }
-            std::size_t active_count = 0;
-            std::mutex cv_mutex;
-            std::condition_variable cv;
-            for(std::size_t i = 0; i < count; ++i) {
-                {
-                    std::unique_lock lock(cv_mutex);
-                    active_count += 1;
-                }
-                std::thread t([] (std::size_t *ac, std::mutex *cvm,
-                            std::condition_variable *cv, std::size_t i,
-                            const std::vector<bool> *pbp, std::size_t width,
-                            std::size_t height, std::vector<double> *fout) {
-                        std::size_t x, y;
-                        std::tie(x, y) = internal::oneToTwo(i, width);
-                        (*fout)[i] = internal::filter(*pbp, x, y, width, height);
-                        std::unique_lock lock(*cvm);
-                        *ac -= 1;
-                        cv->notify_all();
-                    },
-                    &active_count, &cv_mutex, &cv, i, &pbp, width, height, &filter_out);
-                t.detach();
-
-                std::unique_lock lock(cv_mutex);
-                while(active_count >= threads) {
-#ifndef NDEBUG
-//                    std::cout << "0, active_count = " << active_count
-//                        << ", pre wait_for" << std::endl;
-#endif
-                    cv.wait_for(lock, std::chrono::seconds(1));
-#ifndef NDEBUG
-//                    std::cout << "0, active_count = " << active_count
-//                        << ", post wait_for" << std::endl;
-#endif
-                }
-            }
-            std::unique_lock lock(cv_mutex);
-            while(active_count > 0) {
-                cv.wait_for(lock, std::chrono::seconds(1));
-            }
-        }
+        internal::compute_filter(pbp, width, height, count, filter_size,
+                filter_out, threads);
 
 #ifndef NDEBUG
 //        for(std::size_t i = 0; i < count; ++i) {
@@ -268,54 +217,8 @@ std::vector<bool> dither::blue_noise(std::size_t width, std::size_t height, std:
         pbp[max_one] = false;
 
         // get filter values again
-        if(threads == 1) {
-            for(std::size_t y = 0; y < height; ++y) {
-                for(std::size_t x = 0; x < width; ++x) {
-                    filter_out[internal::twoToOne(x, y, width)] =
-                        internal::filter(pbp, x, y, width, height);
-                }
-            }
-        } else {
-            std::size_t active_count = 0;
-            std::mutex cv_mutex;
-            std::condition_variable cv;
-            for(std::size_t i = 0; i < count; ++i) {
-                {
-                    std::unique_lock lock(cv_mutex);
-                    active_count += 1;
-                }
-                std::thread t([] (std::size_t *ac, std::mutex *cvm,
-                            std::condition_variable *cv, std::size_t i,
-                            const std::vector<bool> *pbp, std::size_t width,
-                            std::size_t height, std::vector<double> *fout) {
-                        std::size_t x, y;
-                        std::tie(x, y) = internal::oneToTwo(i, width);
-                        (*fout)[i] = internal::filter(*pbp, x, y, width, height);
-                        std::unique_lock lock(*cvm);
-                        *ac -= 1;
-                        cv->notify_all();
-                    },
-                    &active_count, &cv_mutex, &cv, i, &pbp, width, height, &filter_out);
-                t.detach();
-
-                std::unique_lock lock(cv_mutex);
-                while(active_count >= threads) {
-#ifndef NDEBUG
-//                    std::cout << "1, active_count = " << active_count
-//                        << ", pre wait_for" << std::endl;
-#endif
-                    cv.wait_for(lock, std::chrono::seconds(1));
-#ifndef NDEBUG
-//                    std::cout << "1, active_count = " << active_count
-//                        << ", post wait_for" << std::endl;
-#endif
-                }
-            }
-            std::unique_lock lock(cv_mutex);
-            while(active_count > 0) {
-                cv.wait_for(lock, std::chrono::seconds(1));
-            }
-        }
+        internal::compute_filter(pbp, width, height, count, filter_size,
+                filter_out, threads);
 
         // get second buffer's min
         std::size_t second_min;
