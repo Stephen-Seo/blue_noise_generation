@@ -46,7 +46,7 @@ namespace internal {
                 std::size_t p_prime = (width + filter_size / 2 + x - p) % width;
                 bool pbp_value = pbp[twoToOne(p_prime, q_prime, width)];
                 if(pbp_value) {
-                    sum += gaussian((double)p - width/2.0, (double)q - width/2.0);
+                    sum += gaussian((double)p - filter_size/2.0, (double)q - filter_size/2.0);
                 }
             }
         }
