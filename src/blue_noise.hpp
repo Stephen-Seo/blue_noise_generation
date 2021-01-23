@@ -32,6 +32,19 @@ namespace internal {
         return std::exp(-(x*x + y*y)/(2*mu_squared));
     }
 
+    inline std::vector<float> precompute_gaussian(int size) {
+        std::vector<float> precomputed;
+        precomputed.reserve(size * size);
+
+        for(int i = 0; i < size * size; ++i) {
+            auto xy = oneToTwo(i, size);
+            precomputed.push_back(gaussian(
+                (float)xy.first - size / 2.0f, (float)xy.second - size / 2.0f));
+        }
+
+        return precomputed;
+    }
+
     inline float filter(
             const std::vector<bool>& pbp,
             int x, int y,
@@ -46,9 +59,28 @@ namespace internal {
             int q_prime = (height + filter_size / 2 + y - q) % height;
             for(int p = 0; p < filter_size; ++p) {
                 int p_prime = (width + filter_size / 2 + x - p) % width;
-                bool pbp_value = pbp[twoToOne(p_prime, q_prime, width)];
-                if(pbp_value) {
+                if(pbp[twoToOne(p_prime, q_prime, width)]) {
                     sum += gaussian((float)p - filter_size/2.0f, (float)q - filter_size/2.0f);
+                }
+            }
+        }
+
+        return sum;
+    }
+
+    inline float filter_with_precomputed(
+            const std::vector<bool>& pbp,
+            int x, int y,
+            int width, int height, int filter_size,
+            const std::vector<float> &precomputed) {
+        float sum = 0.0f;
+
+        for(int q = 0; q < filter_size; ++q) {
+            int q_prime = (height + filter_size / 2 + y - q) % height;
+            for(int p = 0; p < filter_size; ++p) {
+                int p_prime = (width + filter_size / 2 + x - p) % width;
+                if(pbp[twoToOne(p_prime, q_prime, width)]) {
+                    sum += precomputed[twoToOne(p, q, filter_size)];
                 }
             }
         }
@@ -59,12 +91,23 @@ namespace internal {
     inline void compute_filter(
             const std::vector<bool> &pbp, int width, int height,
             int count, int filter_size, std::vector<float> &filter_out,
+            const std::vector<float> *precomputed = nullptr,
             int threads = 1) {
         if(threads == 1) {
-            for(int y = 0; y < height; ++y) {
-                for(int x = 0; x < width; ++x) {
-                    filter_out[internal::twoToOne(x, y, width)] =
-                        internal::filter(pbp, x, y, width, height, filter_size);
+            if(precomputed) {
+                for(int y = 0; y < height; ++y) {
+                    for(int x = 0; x < width; ++x) {
+                        filter_out[internal::twoToOne(x, y, width)] =
+                            internal::filter_with_precomputed(
+                                pbp, x, y, width, height, filter_size, *precomputed);
+                    }
+                }
+            } else {
+                for(int y = 0; y < height; ++y) {
+                    for(int x = 0; x < width; ++x) {
+                        filter_out[internal::twoToOne(x, y, width)] =
+                            internal::filter(pbp, x, y, width, height, filter_size);
+                    }
                 }
             }
         } else {
@@ -74,39 +117,62 @@ namespace internal {
             int active_count = 0;
             std::mutex cv_mutex;
             std::condition_variable cv;
-            for(int i = 0; i < count; ++i) {
-                {
-                    std::unique_lock lock(cv_mutex);
-                    active_count += 1;
-                }
-                std::thread t([] (int *ac, std::mutex *cvm,
-                            std::condition_variable *cv, int i,
-                            const std::vector<bool> *pbp, int width,
-                            int height, int filter_size,
-                            std::vector<float> *fout) {
-                        int x, y;
-                        std::tie(x, y) = internal::oneToTwo(i, width);
-                        (*fout)[i] = internal::filter(
-                            *pbp, x, y, width, height, filter_size);
-                        std::unique_lock lock(*cvm);
-                        *ac -= 1;
-                        cv->notify_all();
-                    },
-                    &active_count, &cv_mutex, &cv, i, &pbp, width, height,
-                    filter_size, &filter_out);
-                t.detach();
+            if(precomputed) {
+                for(int i = 0; i < count; ++i) {
+                    {
+                        std::unique_lock lock(cv_mutex);
+                        active_count += 1;
+                    }
+                    std::thread t([] (int *ac, std::mutex *cvm,
+                                std::condition_variable *cv, int i,
+                                const std::vector<bool> *pbp, int width,
+                                int height, int filter_size,
+                                std::vector<float> *fout,
+                                const std::vector<float> *precomputed) {
+                            int x, y;
+                            std::tie(x, y) = internal::oneToTwo(i, width);
+                            (*fout)[i] = internal::filter_with_precomputed(
+                                *pbp, x, y, width, height, filter_size, *precomputed);
+                            std::unique_lock lock(*cvm);
+                            *ac -= 1;
+                            cv->notify_all();
+                        },
+                        &active_count, &cv_mutex, &cv, i, &pbp, width, height,
+                        filter_size, &filter_out, precomputed);
+                    t.detach();
 
-                std::unique_lock lock(cv_mutex);
-                while(active_count >= threads) {
-#ifndef NDEBUG
-//                    std::cout << "0, active_count = " << active_count
-//                        << ", pre wait_for" << std::endl;
-#endif
-                    cv.wait_for(lock, std::chrono::seconds(1));
-#ifndef NDEBUG
-//                    std::cout << "0, active_count = " << active_count
-//                        << ", post wait_for" << std::endl;
-#endif
+                    std::unique_lock lock(cv_mutex);
+                    while(active_count >= threads) {
+                        cv.wait_for(lock, std::chrono::seconds(1));
+                    }
+                }
+            } else {
+                for(int i = 0; i < count; ++i) {
+                    {
+                        std::unique_lock lock(cv_mutex);
+                        active_count += 1;
+                    }
+                    std::thread t([] (int *ac, std::mutex *cvm,
+                                std::condition_variable *cv, int i,
+                                const std::vector<bool> *pbp, int width,
+                                int height, int filter_size,
+                                std::vector<float> *fout) {
+                            int x, y;
+                            std::tie(x, y) = internal::oneToTwo(i, width);
+                            (*fout)[i] = internal::filter(
+                                *pbp, x, y, width, height, filter_size);
+                            std::unique_lock lock(*cvm);
+                            *ac -= 1;
+                            cv->notify_all();
+                        },
+                        &active_count, &cv_mutex, &cv, i, &pbp, width, height,
+                        filter_size, &filter_out);
+                    t.detach();
+
+                    std::unique_lock lock(cv_mutex);
+                    while(active_count >= threads) {
+                        cv.wait_for(lock, std::chrono::seconds(1));
+                    }
                 }
             }
             std::unique_lock lock(cv_mutex);

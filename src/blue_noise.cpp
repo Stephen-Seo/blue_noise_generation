@@ -3,6 +3,7 @@
 #include <random>
 #include <cassert>
 #include <iostream>
+#include <memory>
 
 #ifndef NDEBUG
 # include <cstdio>
@@ -58,8 +59,10 @@ std::vector<bool> dither::blue_noise(int width, int height, int threads) {
 
     int filter_size = (width + height) / 2;
 
+    std::unique_ptr<std::vector<float>> precomputed = std::make_unique<std::vector<float>>(internal::precompute_gaussian(filter_size));
+
     internal::compute_filter(pbp, width, height, count, filter_size,
-            filter_out, threads);
+            filter_out, precomputed.get(), threads);
     internal::write_filter(filter_out, width, "filter_out_start.pgm");
     while(true) {
 //#ifndef NDEBUG
@@ -69,7 +72,7 @@ std::vector<bool> dither::blue_noise(int width, int height, int threads) {
 //#endif
         // get filter values
         internal::compute_filter(pbp, width, height, count, filter_size,
-                filter_out, threads);
+                filter_out, precomputed.get(), threads);
 
 #ifndef NDEBUG
 //        for(int i = 0; i < count; ++i) {
@@ -112,7 +115,7 @@ std::vector<bool> dither::blue_noise(int width, int height, int threads) {
 
         // get filter values again
         internal::compute_filter(pbp, width, height, count, filter_size,
-                filter_out, threads);
+                filter_out, precomputed.get(), threads);
 
         // get second buffer's min
         int second_min;
@@ -146,7 +149,7 @@ std::vector<bool> dither::blue_noise(int width, int height, int threads) {
         }
     }
     internal::compute_filter(pbp, width, height, count, filter_size,
-            filter_out, threads);
+            filter_out, precomputed.get(), threads);
     internal::write_filter(filter_out, width, "filter_out_final.pgm");
 
 //#ifndef NDEBUG
