@@ -9,9 +9,9 @@
 #endif
 
 void dither::internal::recursive_apply_radius(
-        std::size_t idx, std::size_t width, std::size_t height,
-        std::size_t radius, const std::function<bool(std::size_t)>& fn) {
-    std::unordered_set<std::size_t> visited;
+        int idx, int width, int height,
+        int radius, const std::function<bool(int)>& fn) {
+    std::unordered_set<int> visited;
 #ifndef NDEBUG
     if(recursive_apply_radius_impl(idx, width, height, radius, fn, visited)) {
         puts("recursive_apply_radius_impl found result");
@@ -24,13 +24,13 @@ void dither::internal::recursive_apply_radius(
 }
 
 bool dither::internal::recursive_apply_radius_impl(
-        std::size_t idx, std::size_t width, std::size_t height,
-        std::size_t radius, const std::function<bool(std::size_t)>& fn,
-        std::unordered_set<std::size_t>& visited) {
+        int idx, int width, int height,
+        int radius, const std::function<bool(int)>& fn,
+        std::unordered_set<int>& visited) {
     if(fn(idx)) {
         return true;
     }
-    std::size_t x, y, temp;
+    int x, y, temp;
     std::tie(x, y) = oneToTwo(idx, width);
 
     if(x + 1 < width) {
@@ -117,21 +117,21 @@ bool dither::internal::recursive_apply_radius_impl(
 }
 
 
-std::vector<bool> dither::blue_noise(std::size_t width, std::size_t height, std::size_t threads) {
-    std::size_t count = width * height;
-    std::vector<double> filter_out;
+std::vector<bool> dither::blue_noise(int width, int height, int threads) {
+    int count = width * height;
+    std::vector<float> filter_out;
     filter_out.resize(count);
 
     std::vector<bool> pbp; // Prototype Binary Pattern
     pbp.resize(count);
 
     std::default_random_engine re(std::random_device{}());
-    std::uniform_int_distribution<std::size_t> dist(0, count - 1);
+    std::uniform_int_distribution<int> dist(0, count - 1);
 
-    const std::size_t pixel_count = count * 4 / 10;
+    const int pixel_count = count * 4 / 10;
 
     // initialize pbp
-    for(std::size_t i = 0; i < count; ++i) {
+    for(int i = 0; i < count; ++i) {
         if(i < pixel_count) {
             pbp[i] = true;
         } else {
@@ -139,21 +139,21 @@ std::vector<bool> dither::blue_noise(std::size_t width, std::size_t height, std:
         }
     }
     // randomize pbp
-    for(std::size_t i = 0; i < count-1; ++i) {
+    for(int i = 0; i < count-1; ++i) {
         decltype(dist)::param_type range{i+1, count-1};
-        std::size_t ridx = dist(re, range);
+        int ridx = dist(re, range);
         // probably can't use std::swap since using std::vector<bool>
         bool temp = pbp[i];
         pbp[i] = pbp[ridx];
         pbp[ridx] = temp;
     }
 //#ifndef NDEBUG
-    printf("Inserting %ld pixels into image of max count %ld\n", pixel_count, count);
+    printf("Inserting %d pixels into image of max count %d\n", pixel_count, count);
     // generate image from randomized pbp
     FILE *random_noise_image = fopen("random_noise.pbm", "w");
-    fprintf(random_noise_image, "P1\n%ld %ld\n", width, height);
-    for(std::size_t y = 0; y < height; ++y) {
-        for(std::size_t x = 0; x < width; ++x) {
+    fprintf(random_noise_image, "P1\n%d %d\n", width, height);
+    for(int y = 0; y < height; ++y) {
+        for(int x = 0; x < width; ++x) {
             fprintf(random_noise_image, "%d ", pbp[internal::twoToOne(x, y, width)] ? 1 : 0);
         }
         fputc('\n', random_noise_image);
@@ -162,15 +162,15 @@ std::vector<bool> dither::blue_noise(std::size_t width, std::size_t height, std:
 //#endif
 
 //#ifndef NDEBUG
-    std::size_t iterations = 0;
+    int iterations = 0;
 //#endif
 
-    std::size_t filter_size = (width + height) / 2;
+    int filter_size = (width + height) / 2;
 
     while(true) {
 //#ifndef NDEBUG
 //        if(++iterations % 10 == 0) {
-            printf("Iteration %ld\n", ++iterations);
+            printf("Iteration %d\n", ++iterations);
 //        }
 //#endif
         // get filter values
@@ -178,14 +178,14 @@ std::vector<bool> dither::blue_noise(std::size_t width, std::size_t height, std:
                 filter_out, threads);
 
 #ifndef NDEBUG
-//        for(std::size_t i = 0; i < count; ++i) {
-//            std::size_t x, y;
+//        for(int i = 0; i < count; ++i) {
+//            int x, y;
 //            std::tie(x, y) = internal::oneToTwo(i, width);
-//            printf("%ld (%ld, %ld): %f\n", i, x, y, filter_out[i]);
+//            printf("%d (%d, %d): %f\n", i, x, y, filter_out[i]);
 //        }
 #endif
 
-        std::size_t min, max, min_zero, max_one;
+        int min, max, min_zero, max_one;
         std::tie(min, max) = internal::filter_minmax(filter_out);
         if(!pbp[max]) {
             max_one = internal::get_one_or_zero(pbp, true, max, width, height);
@@ -221,7 +221,7 @@ std::vector<bool> dither::blue_noise(std::size_t width, std::size_t height, std:
                 filter_out, threads);
 
         // get second buffer's min
-        std::size_t second_min;
+        int second_min;
         std::tie(second_min, std::ignore) = internal::filter_minmax(filter_out);
         if(pbp[second_min]) {
             second_min = internal::get_one_or_zero(pbp, false, second_min, width, height);
@@ -242,9 +242,9 @@ std::vector<bool> dither::blue_noise(std::size_t width, std::size_t height, std:
 //#ifndef NDEBUG
     // generate blue_noise image from pbp
     FILE *blue_noise_image = fopen("blue_noise.pbm", "w");
-    fprintf(blue_noise_image, "P1\n%ld %ld\n", width, height);
-    for(std::size_t y = 0; y < height; ++y) {
-        for(std::size_t x = 0; x < width; ++x) {
+    fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
+    for(int y = 0; y < height; ++y) {
+        for(int x = 0; x < width; ++x) {
             fprintf(blue_noise_image, "%d ", pbp[internal::twoToOne(x, y, width)] ? 1 : 0);
         }
         fputc('\n', blue_noise_image);
