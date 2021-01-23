@@ -207,12 +207,12 @@ namespace internal {
 
         printf("Writing to %s, min is %.3f, max is %.3f\n", filename, filter[min], filter[max]);
         FILE *filter_image = fopen(filename, "w");
-        fprintf(filter_image, "P2\n%d %d\n65535\n", width, (int)filter.size() / width);
+        fprintf(filter_image, "P2\n%d %d\n255\n", width, (int)filter.size() / width);
         for(std::vector<float>::size_type i = 0; i < filter.size(); ++i) {
             fprintf(filter_image, "%d ",
                 (int)(((filter[i] - filter[min])
                         / (filter[max] - filter[min]))
-                    * 65535.0f));
+                    * 255.0f));
             if((i + 1) % width == 0) {
                 fputc('\n', filter_image);
             }
