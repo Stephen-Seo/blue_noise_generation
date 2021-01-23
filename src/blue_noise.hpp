@@ -12,12 +12,46 @@
 #include <chrono>
 #include <cstdio>
 #include <queue>
+#include <random>
+
+#include <CL/opencl.h>
 
 namespace dither {
 
 std::vector<bool> blue_noise(int width, int height, int threads = 1);
 
 namespace internal {
+    std::vector<bool> blue_noise_impl(int width, int height, int threads = 1);
+    std::vector<bool> blue_noise_cl_impl(
+        int width, int height, int filter_size,
+        cl_context context, cl_device_id device, cl_program program);
+
+    inline std::vector<bool> random_noise(int size, int subsize) {
+        std::vector<bool> pbp(size);
+        std::default_random_engine re(std::random_device{}());
+        std::uniform_int_distribution<int> dist(0, size - 1);
+
+        // initialize pbp
+        for(int i = 0; i < size; ++i) {
+            if(i < subsize) {
+                pbp[i] = true;
+            } else {
+                pbp[i] = false;
+            }
+        }
+        // randomize pbp
+        for(int i = 0; i < size-1; ++i) {
+            decltype(dist)::param_type range{i+1, size-1};
+            int ridx = dist(re, range);
+            // probably can't use std::swap since using std::vector<bool>
+            bool temp = pbp[i];
+            pbp[i] = pbp[ridx];
+            pbp[ridx] = temp;
+        }
+
+        return pbp;
+    }
+
     inline int twoToOne(int x, int y, int width) {
         return x + y * width;
     }
