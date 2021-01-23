@@ -8,115 +8,6 @@
 # include <cstdio>
 #endif
 
-void dither::internal::recursive_apply_radius(
-        int idx, int width, int height,
-        int radius, const std::function<bool(int)>& fn) {
-    std::unordered_set<int> visited;
-#ifndef NDEBUG
-    if(recursive_apply_radius_impl(idx, width, height, radius, fn, visited)) {
-        puts("recursive_apply_radius_impl found result");
-    } else {
-        puts("recursive_apply_radius_impl did NOT find result");
-    }
-#else
-    recursive_apply_radius_impl(idx, width, height, radius, fn, visited);
-#endif
-}
-
-bool dither::internal::recursive_apply_radius_impl(
-        int idx, int width, int height,
-        int radius, const std::function<bool(int)>& fn,
-        std::unordered_set<int>& visited) {
-    if(fn(idx)) {
-        return true;
-    }
-    int x, y, temp;
-    std::tie(x, y) = oneToTwo(idx, width);
-
-    if(x + 1 < width) {
-        temp = idx + 1;
-        if(visited.find(temp) == visited.end()) {
-            visited.insert(temp);
-            if(recursive_apply_radius_impl(
-                    temp, width, height, radius - 1, fn, visited)) {
-                return true;
-            }
-        }
-    } else {
-        temp = twoToOne(0, y, width);
-        if(visited.find(temp) == visited.end()) {
-            visited.insert(temp);
-            if(recursive_apply_radius_impl(
-                    twoToOne(0, y, width),
-                    width, height, radius - 1,
-                    fn, visited)) {
-                return true;
-            }
-        }
-    }
-
-    if(x > 0) {
-        temp = idx - 1;
-        if(visited.find(temp) == visited.end()) {
-            visited.insert(temp);
-            if(recursive_apply_radius_impl(
-                    idx - 1, width, height, radius - 1, fn, visited)) {
-                return true;
-            }
-        }
-    } else {
-        temp = twoToOne(width - 1, y, width);
-        if(visited.find(temp) == visited.end()) {
-            if(recursive_apply_radius_impl(
-                    temp, width, height, radius - 1, fn, visited)) {
-                return true;
-            }
-        }
-    }
-
-    if(y + 1 < height) {
-        temp = idx + width;
-        if(visited.find(temp) == visited.end()) {
-            visited.insert(temp);
-            if(recursive_apply_radius_impl(
-                    temp, width, height, radius - 1, fn, visited)) {
-                return true;
-            }
-        }
-    } else {
-        temp = twoToOne(x, 0, width);
-        if(visited.find(temp) == visited.end()) {
-            visited.insert(temp);
-            if(recursive_apply_radius_impl(
-                    temp, width, height, radius - 1, fn, visited)) {
-                return true;
-            }
-        }
-    }
-
-    if(y > 0) {
-        temp = idx - width;
-        if(visited.find(temp) == visited.end()) {
-            visited.insert(temp);
-            if(recursive_apply_radius_impl(
-                    temp, width, height, radius - 1, fn, visited)) {
-                return true;
-            }
-        }
-    } else {
-        temp = twoToOne(x, height - 1, width);
-        if(visited.find(temp) == visited.end()) {
-            visited.insert(temp);
-            if(recursive_apply_radius_impl(
-                    temp, width, height, radius - 1, fn, visited)) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-
 std::vector<bool> dither::blue_noise(int width, int height, int threads) {
     int count = width * height;
     std::vector<float> filter_out;
@@ -167,6 +58,9 @@ std::vector<bool> dither::blue_noise(int width, int height, int threads) {
 
     int filter_size = (width + height) / 2;
 
+    internal::compute_filter(pbp, width, height, count, filter_size,
+            filter_out, threads);
+    internal::write_filter(filter_out, width, "filter_out_start.pgm");
     while(true) {
 //#ifndef NDEBUG
 //        if(++iterations % 10 == 0) {
@@ -231,13 +125,29 @@ std::vector<bool> dither::blue_noise(int width, int height, int threads) {
             }
         }
 
-        if(min_zero != second_min) {
+        if(internal::dist(max_one, second_min, width) < 1.5f) {
             pbp[max_one] = true;
             break;
         } else {
             pbp[min_zero] = true;
         }
+
+        if(iterations % 100 == 0) {
+            // generate blue_noise image from pbp
+            FILE *blue_noise_image = fopen("blue_noise.pbm", "w");
+            fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
+            for(int y = 0; y < height; ++y) {
+                for(int x = 0; x < width; ++x) {
+                    fprintf(blue_noise_image, "%d ", pbp[internal::twoToOne(x, y, width)] ? 1 : 0);
+                }
+                fputc('\n', blue_noise_image);
+            }
+            fclose(blue_noise_image);
+        }
     }
+    internal::compute_filter(pbp, width, height, count, filter_size,
+            filter_out, threads);
+    internal::write_filter(filter_out, width, "filter_out_final.pgm");
 
 //#ifndef NDEBUG
     // generate blue_noise image from pbp

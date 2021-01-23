@@ -2,7 +2,7 @@
 #define BLUE_NOISE_HPP
 
 #include <vector>
-#include <tuple>
+#include <utility>
 #include <cmath>
 #include <functional>
 #include <unordered_set>
@@ -10,6 +10,8 @@
 #include <mutex>
 #include <thread>
 #include <chrono>
+#include <cstdio>
+#include <queue>
 
 namespace dither {
 
@@ -20,11 +22,11 @@ namespace internal {
         return x + y * width;
     }
 
-    inline std::tuple<int, int> oneToTwo(int i, int width) {
+    inline std::pair<int, int> oneToTwo(int i, int width) {
         return {i % width, i / width};
     }
 
-    constexpr float mu_squared = 1.5 * 1.5;
+    constexpr float mu_squared = 1.5f * 1.5f;
 
     inline float gaussian(float x, float y) {
         return std::exp(-(x*x + y*y)/(2*mu_squared));
@@ -34,7 +36,7 @@ namespace internal {
             const std::vector<bool>& pbp,
             int x, int y,
             int width, int height, int filter_size) {
-        float sum = 0.0;
+        float sum = 0.0f;
 
         // Should be range -M/2 to M/2, but size_t cannot be negative, so range
         // is 0 to M.
@@ -46,7 +48,7 @@ namespace internal {
                 int p_prime = (width + filter_size / 2 + x - p) % width;
                 bool pbp_value = pbp[twoToOne(p_prime, q_prime, width)];
                 if(pbp_value) {
-                    sum += gaussian((float)p - filter_size/2.0, (float)q - filter_size/2.0);
+                    sum += gaussian((float)p - filter_size/2.0f, (float)q - filter_size/2.0f);
                 }
             }
         }
@@ -115,9 +117,9 @@ namespace internal {
 
     }
 
-    inline std::tuple<int, int> filter_minmax(const std::vector<float>& filter) {
+    inline std::pair<int, int> filter_minmax(const std::vector<float>& filter) {
         float min = std::numeric_limits<float>::infinity();
-        float max = 0.0;
+        float max = 0.0f;
         int min_index = 0;
         int max_index = 0;
 
@@ -135,39 +137,95 @@ namespace internal {
         return {min_index, max_index};
     }
 
-    void recursive_apply_radius(
-        int idx, int width,
-        int height, int radius,
-        const std::function<bool(int)>& fn);
-
-    bool recursive_apply_radius_impl(
-        int idx, int width,
-        int height, int radius,
-        const std::function<bool(int)>& fn,
-        std::unordered_set<int>& visited);
-
     inline int get_one_or_zero(
             const std::vector<bool>& pbp, bool get_one,
             int idx, int width, int height) {
-        int found_idx;
-        bool found = false;
-        for(int radius = 1; radius <= 12; ++radius) {
-            recursive_apply_radius(
-                idx, width, height, radius,
-                [&found_idx, &found, &pbp, &get_one] (int idx) {
-                    if((get_one && pbp[idx]) || (!get_one && !pbp[idx])) {
-                        found_idx = idx;
-                        found = true;
-                        return true;
-                    } else {
-                        return false;
-                    }
-                });
-            if(found) {
-                return found_idx;
+        std::queue<int> checking_indices;
+
+        auto xy = oneToTwo(idx, width);
+        int count = 0;
+        int loops = 0;
+        enum { D_DOWN = 0, D_LEFT = 1, D_UP = 2, D_RIGHT = 3 } dir = D_RIGHT;
+        int next;
+
+        while(true) {
+            if(count == 0) {
+                switch(dir) {
+                case D_RIGHT:
+                    xy.first = (xy.first + 1) % width;
+                    ++loops;
+                    count = loops * 2 - 1;
+                    dir = D_DOWN;
+                    break;
+                case D_DOWN:
+                    xy.first = (xy.first + width - 1) % width;
+                    count = loops * 2 - 1;
+                    dir = D_LEFT;
+                    break;
+                case D_LEFT:
+                    xy.second = (xy.second + height - 1) % height;
+                    count = loops * 2 - 1;
+                    dir = D_UP;
+                    break;
+                case D_UP:
+                    xy.first = (xy.first + 1) % width;
+                    count = loops * 2 - 1;
+                    dir = D_RIGHT;
+                    break;
+                }
+            } else {
+                switch(dir) {
+                case D_DOWN:
+                    xy.second = (xy.second + 1) % height;
+                    --count;
+                    break;
+                case D_LEFT:
+                    xy.first = (xy.first + width - 1) % width;
+                    --count;
+                    break;
+                case D_UP:
+                    xy.second = (xy.second + height - 1) % height;
+                    --count;
+                    break;
+                case D_RIGHT:
+                    xy.first = (xy.first + 1) % width;
+                    --count;
+                    break;
+                }
+            }
+            next = twoToOne(xy.first, xy.second, width);
+            if((get_one && pbp[next]) || (!get_one && !pbp[next])) {
+                return next;
             }
         }
         return idx;
+    }
+
+    inline void write_filter(const std::vector<float> &filter, int width, const char *filename) {
+        int min, max;
+        std::tie(min, max) = filter_minmax(filter);
+
+        printf("Writing to %s, min is %.3f, max is %.3f\n", filename, filter[min], filter[max]);
+        FILE *filter_image = fopen(filename, "w");
+        fprintf(filter_image, "P2\n%d %d\n65535\n", width, (int)filter.size() / width);
+        for(std::vector<float>::size_type i = 0; i < filter.size(); ++i) {
+            fprintf(filter_image, "%d ",
+                (int)(((filter[i] - filter[min])
+                        / (filter[max] - filter[min]))
+                    * 65535.0f));
+            if((i + 1) % width == 0) {
+                fputc('\n', filter_image);
+            }
+        }
+        fclose(filter_image);
+    }
+
+    inline float dist(int a, int b, int width) {
+        auto axy = oneToTwo(a, width);
+        auto bxy = oneToTwo(b, width);
+        float dx = axy.first - bxy.first;
+        float dy = axy.second - bxy.second;
+        return std::sqrt(dx * dx + dy * dy);
     }
 } // namespace dither::internal
 
