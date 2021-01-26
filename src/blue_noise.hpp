@@ -2,8 +2,6 @@
 #define BLUE_NOISE_HPP
 
 #include <vector>
-#include <utility>
-#include <cmath>
 #include <functional>
 #include <unordered_set>
 #include <condition_variable>
@@ -15,6 +13,8 @@
 #include <random>
 
 #include <CL/opencl.h>
+
+#include "utility.hpp"
 
 namespace dither {
 
@@ -52,14 +52,6 @@ namespace internal {
         return pbp;
     }
 
-    inline int twoToOne(int x, int y, int width) {
-        return x + y * width;
-    }
-
-    inline std::pair<int, int> oneToTwo(int i, int width) {
-        return {i % width, i / width};
-    }
-
     constexpr float mu_squared = 1.5f * 1.5f;
 
     inline float gaussian(float x, float y) {
@@ -71,7 +63,7 @@ namespace internal {
         precomputed.reserve(size * size);
 
         for(int i = 0; i < size * size; ++i) {
-            auto xy = oneToTwo(i, size);
+            auto xy = utility::oneToTwo(i, size);
             precomputed.push_back(gaussian(
                 (float)xy.first - size / 2.0f, (float)xy.second - size / 2.0f));
         }
@@ -93,7 +85,7 @@ namespace internal {
             int q_prime = (height + filter_size / 2 + y - q) % height;
             for(int p = 0; p < filter_size; ++p) {
                 int p_prime = (width + filter_size / 2 + x - p) % width;
-                if(pbp[twoToOne(p_prime, q_prime, width)]) {
+                if(pbp[utility::twoToOne(p_prime, q_prime, width)]) {
                     sum += gaussian((float)p - filter_size/2.0f, (float)q - filter_size/2.0f);
                 }
             }
@@ -113,8 +105,8 @@ namespace internal {
             int q_prime = (height + filter_size / 2 + y - q) % height;
             for(int p = 0; p < filter_size; ++p) {
                 int p_prime = (width + filter_size / 2 + x - p) % width;
-                if(pbp[twoToOne(p_prime, q_prime, width)]) {
-                    sum += precomputed[twoToOne(p, q, filter_size)];
+                if(pbp[utility::twoToOne(p_prime, q_prime, width)]) {
+                    sum += precomputed[utility::twoToOne(p, q, filter_size)];
                 }
             }
         }
@@ -131,7 +123,7 @@ namespace internal {
             if(precomputed) {
                 for(int y = 0; y < height; ++y) {
                     for(int x = 0; x < width; ++x) {
-                        filter_out[internal::twoToOne(x, y, width)] =
+                        filter_out[utility::twoToOne(x, y, width)] =
                             internal::filter_with_precomputed(
                                 pbp, x, y, width, height, filter_size, *precomputed);
                     }
@@ -139,7 +131,7 @@ namespace internal {
             } else {
                 for(int y = 0; y < height; ++y) {
                     for(int x = 0; x < width; ++x) {
-                        filter_out[internal::twoToOne(x, y, width)] =
+                        filter_out[utility::twoToOne(x, y, width)] =
                             internal::filter(pbp, x, y, width, height, filter_size);
                     }
                 }
@@ -164,7 +156,7 @@ namespace internal {
                                 std::vector<float> *fout,
                                 const std::vector<float> *precomputed) {
                             int x, y;
-                            std::tie(x, y) = internal::oneToTwo(i, width);
+                            std::tie(x, y) = utility::oneToTwo(i, width);
                             (*fout)[i] = internal::filter_with_precomputed(
                                 *pbp, x, y, width, height, filter_size, *precomputed);
                             std::unique_lock lock(*cvm);
@@ -192,7 +184,7 @@ namespace internal {
                                 int height, int filter_size,
                                 std::vector<float> *fout) {
                             int x, y;
-                            std::tie(x, y) = internal::oneToTwo(i, width);
+                            std::tie(x, y) = utility::oneToTwo(i, width);
                             (*fout)[i] = internal::filter(
                                 *pbp, x, y, width, height, filter_size);
                             std::unique_lock lock(*cvm);
@@ -242,7 +234,7 @@ namespace internal {
             int idx, int width, int height) {
         std::queue<int> checking_indices;
 
-        auto xy = oneToTwo(idx, width);
+        auto xy = utility::oneToTwo(idx, width);
         int count = 0;
         int loops = 0;
         enum { D_DOWN = 0, D_LEFT = 1, D_UP = 2, D_RIGHT = 3 } dir = D_RIGHT;
@@ -293,7 +285,7 @@ namespace internal {
                     break;
                 }
             }
-            next = twoToOne(xy.first, xy.second, width);
+            next = utility::twoToOne(xy.first, xy.second, width);
             if((get_one && pbp[next]) || (!get_one && !pbp[next])) {
                 return next;
             }
@@ -318,14 +310,6 @@ namespace internal {
             }
         }
         fclose(filter_image);
-    }
-
-    inline float dist(int a, int b, int width) {
-        auto axy = oneToTwo(a, width);
-        auto bxy = oneToTwo(b, width);
-        float dx = axy.first - bxy.first;
-        float dy = axy.second - bxy.second;
-        return std::sqrt(dx * dx + dy * dy);
     }
 } // namespace dither::internal
 

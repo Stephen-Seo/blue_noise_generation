@@ -114,7 +114,7 @@ std::vector<bool> dither::internal::blue_noise_impl(int width, int height, int t
     fprintf(random_noise_image, "P1\n%d %d\n", width, height);
     for(int y = 0; y < height; ++y) {
         for(int x = 0; x < width; ++x) {
-            fprintf(random_noise_image, "%d ", pbp[internal::twoToOne(x, y, width)] ? 1 : 0);
+            fprintf(random_noise_image, "%d ", pbp[utility::twoToOne(x, y, width)] ? 1 : 0);
         }
         fputc('\n', random_noise_image);
     }
@@ -196,7 +196,7 @@ std::vector<bool> dither::internal::blue_noise_impl(int width, int height, int t
             }
         }
 
-        if(internal::dist(max_one, second_min, width) < 1.5f) {
+        if(utility::dist(max_one, second_min, width) < 1.5f) {
             pbp[max_one] = true;
             break;
         } else {
@@ -209,7 +209,7 @@ std::vector<bool> dither::internal::blue_noise_impl(int width, int height, int t
             fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
             for(int y = 0; y < height; ++y) {
                 for(int x = 0; x < width; ++x) {
-                    fprintf(blue_noise_image, "%d ", pbp[internal::twoToOne(x, y, width)] ? 1 : 0);
+                    fprintf(blue_noise_image, "%d ", pbp[utility::twoToOne(x, y, width)] ? 1 : 0);
                 }
                 fputc('\n', blue_noise_image);
             }
@@ -226,7 +226,7 @@ std::vector<bool> dither::internal::blue_noise_impl(int width, int height, int t
     fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
     for(int y = 0; y < height; ++y) {
         for(int x = 0; x < width; ++x) {
-            fprintf(blue_noise_image, "%d ", pbp[internal::twoToOne(x, y, width)] ? 1 : 0);
+            fprintf(blue_noise_image, "%d ", pbp[utility::twoToOne(x, y, width)] ? 1 : 0);
         }
         fputc('\n', blue_noise_image);
     }
@@ -455,7 +455,7 @@ std::vector<bool> dither::internal::blue_noise_cl_impl(
         fprintf(random_noise_image, "P1\n%d %d\n", width, height);
         for(int y = 0; y < height; ++y) {
             for(int x = 0; x < width; ++x) {
-                fprintf(random_noise_image, "%d ", pbp[internal::twoToOne(x, y, width)] ? 1 : 0);
+                fprintf(random_noise_image, "%d ", pbp[utility::twoToOne(x, y, width)] ? 1 : 0);
             }
             fputc('\n', random_noise_image);
         }
@@ -524,7 +524,7 @@ std::vector<bool> dither::internal::blue_noise_cl_impl(
             }
         }
 
-        if(internal::dist(max_one, second_min, width) < 1.5f) {
+        if(utility::dist(max_one, second_min, width) < 1.5f) {
             pbp[max_one] = true;
             break;
         } else {
@@ -537,7 +537,7 @@ std::vector<bool> dither::internal::blue_noise_cl_impl(
             fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
             for(int y = 0; y < height; ++y) {
                 for(int x = 0; x < width; ++x) {
-                    fprintf(blue_noise_image, "%d ", pbp[internal::twoToOne(x, y, width)] ? 1 : 0);
+                    fprintf(blue_noise_image, "%d ", pbp[utility::twoToOne(x, y, width)] ? 1 : 0);
                 }
                 fputc('\n', blue_noise_image);
             }
@@ -553,7 +553,7 @@ std::vector<bool> dither::internal::blue_noise_cl_impl(
         fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
         for(int y = 0; y < height; ++y) {
             for(int x = 0; x < width; ++x) {
-                fprintf(blue_noise_image, "%d ", pbp[internal::twoToOne(x, y, width)] ? 1 : 0);
+                fprintf(blue_noise_image, "%d ", pbp[utility::twoToOne(x, y, width)] ? 1 : 0);
             }
             fputc('\n', blue_noise_image);
         }
