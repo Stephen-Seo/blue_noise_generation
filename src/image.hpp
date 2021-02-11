@@ -21,22 +21,22 @@ namespace image {
         // TODO PNG support
     };
 
-    class base {
+    class Base {
     public:
-        base() = default;
-        virtual ~base() {}
+        Base() = default;
+        virtual ~Base() {}
 
-        base(const base &other) = default;
-        base(base &&other) = default;
+        Base(const Base &other) = default;
+        Base(Base &&other) = default;
 
-        base& operator=(const base &other) = default;
-        base& operator=(base &&other) = default;
+        Base& operator=(const Base &other) = default;
+        Base& operator=(Base &&other) = default;
 
         virtual void randomize() = 0;
 
         virtual int getSize() = 0;
         virtual uint8_t* getData() = 0;
-        virtual const uint8_t* getDataC() { return getData(); }
+        virtual const uint8_t* getDataC() const = 0;
 
         virtual int getTypesCount() = 0;
         virtual std::vector<color_type> getTypes() = 0;
@@ -47,8 +47,9 @@ namespace image {
         virtual bool writeToFile(file_type type, bool canOverwrite, const std::string &filename) = 0;
     };
 
-    class Bl : public base {
+    class Bl : public Base {
     public:
+        Bl();
         Bl(int width, int height);
         Bl(const std::vector<uint8_t> &data, int width);
         Bl(std::vector<uint8_t> &&data, int width);
@@ -64,6 +65,7 @@ namespace image {
 
         virtual int getSize() override;
         virtual uint8_t* getData() override;
+        virtual const uint8_t* getDataC() const override;
 
         virtual int getTypesCount() override { return 1; }
         virtual std::vector<color_type> getTypes() override { return { color_type::Black }; }
@@ -72,6 +74,7 @@ namespace image {
         virtual bool canWriteFile(file_type type) override;
         virtual bool writeToFile(file_type type, bool canOverwrite, const char *filename) override;
         virtual bool writeToFile(file_type type, bool canOverwrite, const std::string &filename) override;
+        virtual bool isValid() const;
     private:
         std::vector<uint8_t> data;
         int width;

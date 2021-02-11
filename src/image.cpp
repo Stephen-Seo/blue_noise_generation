@@ -3,6 +3,12 @@
 #include <cstdio>
 #include <random>
 
+image::Bl::Bl() :
+data(),
+width(0),
+height(0)
+{}
+
 image::Bl::Bl(int width, int height) :
 data(width * height),
 width(width),
@@ -22,6 +28,10 @@ height(data.size() / width)
 {}
 
 void image::Bl::randomize() {
+    if(!isValid()) {
+        return;
+    }
+
     std::default_random_engine re(std::random_device{}());
     std::uniform_int_distribution<unsigned int> dist;
 
@@ -42,10 +52,23 @@ int image::Bl::getSize() {
 }
 
 uint8_t* image::Bl::getData() {
+    if(!isValid()) {
+        return nullptr;
+    }
+    return &data[0];
+}
+
+const uint8_t* image::Bl::getDataC() const {
+    if(!isValid()) {
+        return nullptr;
+    }
     return &data[0];
 }
 
 bool image::Bl::canWriteFile(file_type type) {
+    if(!isValid()) {
+        return false;
+    }
     switch(type) {
     case file_type::PBM:
     case file_type::PGM:
@@ -57,7 +80,7 @@ bool image::Bl::canWriteFile(file_type type) {
 }
 
 bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filename) {
-    if(!canWriteFile(type)) {
+    if(!isValid() || !canWriteFile(type)) {
         return false;
     }
 
@@ -66,7 +89,10 @@ bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filen
         fclose(file);
         return false;
     }
-    fclose(file);
+
+    if(file) {
+        fclose(file);
+    }
 
     switch(type) {
     case file_type::PBM:
@@ -111,4 +137,8 @@ bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filen
 
 bool image::Bl::writeToFile(file_type type, bool canOverwrite, const std::string &filename) {
     return writeToFile(type, canOverwrite, filename.c_str());
+}
+
+bool image::Bl::isValid() const {
+    return width > 0 && height > 0 && data.size() > 0;
 }

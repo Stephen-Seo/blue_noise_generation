@@ -9,7 +9,8 @@ endif
 
 SOURCES= \
 	src/main.cpp \
-	src/blue_noise.cpp
+	src/blue_noise.cpp \
+	src/image.cpp
 OBJECTS=${subst .cpp,.o,${SOURCES}}
 
 all: Dithering

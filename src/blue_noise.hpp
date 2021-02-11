@@ -11,14 +11,16 @@
 #include <cstdio>
 #include <queue>
 #include <random>
+#include <cassert>
 
 #include <CL/opencl.h>
 
 #include "utility.hpp"
+#include "image.hpp"
 
 namespace dither {
 
-std::vector<bool> blue_noise(int width, int height, int threads = 1);
+image::Bl blue_noise(int width, int height, int threads = 1, bool use_opencl = true);
 
 namespace internal {
     std::vector<bool> blue_noise_impl(int width, int height, int threads = 1);
@@ -310,6 +312,18 @@ namespace internal {
             }
         }
         fclose(filter_image);
+    }
+
+    inline image::Bl toBl(const std::vector<bool>& pbp, int width) {
+        image::Bl bwImage(width, pbp.size() / width);
+        assert((unsigned long)bwImage.getSize() >= pbp.size()
+                && "New image::Bl size too small (pbp's size is not a multiple of width)");
+
+        for(unsigned int i = 0; i < pbp.size(); ++i) {
+            bwImage.getData()[i] = pbp[i] ? 1 : 0;
+        }
+
+        return bwImage;
     }
 } // namespace dither::internal
 

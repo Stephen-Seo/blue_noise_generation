@@ -12,87 +12,90 @@
 # include <cstdio>
 #endif
 
-std::vector<bool> dither::blue_noise(int width, int height, int threads) {
+image::Bl dither::blue_noise(int width, int height, int threads, bool use_opencl) {
 
-    bool use_opencl = false;
+    bool using_opencl = false;
 
-    // try to use OpenCL
-    do {
-        cl_device_id device;
-        cl_context context;
-        cl_program program;
-        cl_int err;
+    if(use_opencl) {
+        // try to use OpenCL
+        do {
+            cl_device_id device;
+            cl_context context;
+            cl_program program;
+            cl_int err;
 
-        cl_platform_id platform;
+            cl_platform_id platform;
 
-        int filter_size = (width + height) / 2;
+            int filter_size = (width + height) / 2;
 
-        err = clGetPlatformIDs(1, &platform, nullptr);
-        if(err != CL_SUCCESS) {
-            std::cerr << "OpenCL: Failed to identify a platform\n";
-            break;
-        }
+            err = clGetPlatformIDs(1, &platform, nullptr);
+            if(err != CL_SUCCESS) {
+                std::cerr << "OpenCL: Failed to identify a platform\n";
+                break;
+            }
 
-        err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, nullptr);
-        if(err != CL_SUCCESS) {
-            std::cerr << "OpenCL: Failed to get a device\n";
-            break;
-        }
+            err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, nullptr);
+            if(err != CL_SUCCESS) {
+                std::cerr << "OpenCL: Failed to get a device\n";
+                break;
+            }
 
-        context = clCreateContext(nullptr, 1, &device, nullptr, nullptr, &err);
+            context = clCreateContext(nullptr, 1, &device, nullptr, nullptr, &err);
 
-        {
-            char buf[1024];
-            std::ifstream program_file("src/blue_noise.cl");
-            std::string program_string;
-            while(program_file.good()) {
-                program_file.read(buf, 1024);
-                if(int read_count = program_file.gcount(); read_count > 0) {
-                    program_string.append(buf, read_count);
+            {
+                char buf[1024];
+                std::ifstream program_file("src/blue_noise.cl");
+                std::string program_string;
+                while(program_file.good()) {
+                    program_file.read(buf, 1024);
+                    if(int read_count = program_file.gcount(); read_count > 0) {
+                        program_string.append(buf, read_count);
+                    }
+                }
+
+                const char *string_ptr = program_string.c_str();
+                std::size_t program_size = program_string.size();
+                program = clCreateProgramWithSource(context, 1, (const char**)&string_ptr, &program_size, &err);
+                if(err != CL_SUCCESS) {
+                    std::cerr << "OpenCL: Failed to create the program\n";
+                    clReleaseContext(context);
+                    break;
+                }
+
+                err = clBuildProgram(program, 1, &device, nullptr, nullptr, nullptr);
+                if(err != CL_SUCCESS) {
+                    std::cerr << "OpenCL: Failed to build the program\n";
+
+                    std::size_t log_size;
+                    clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &log_size);
+                    std::unique_ptr<char[]> log = std::make_unique<char[]>(log_size + 1);
+                    log[log_size] = 0;
+                    clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, log_size, log.get(), nullptr);
+                    std::cerr << log.get() << std::endl;
+
+                    clReleaseProgram(program);
+                    clReleaseContext(context);
+                    break;
                 }
             }
 
-            const char *string_ptr = program_string.c_str();
-            std::size_t program_size = program_string.size();
-            program = clCreateProgramWithSource(context, 1, (const char**)&string_ptr, &program_size, &err);
-            if(err != CL_SUCCESS) {
-                std::cerr << "OpenCL: Failed to create the program\n";
-                clReleaseContext(context);
-                break;
+            std::cout << "OpenCL: Initialized, trying cl_impl..." << std::endl;
+            std::vector<bool> result = internal::blue_noise_cl_impl(
+                width, height, filter_size, context, device, program);
+
+            clReleaseProgram(program);
+            clReleaseContext(context);
+
+            if(!result.empty()) {
+                return internal::toBl(result, width);
             }
+        } while (false);
+    }
 
-            err = clBuildProgram(program, 1, &device, nullptr, nullptr, nullptr);
-            if(err != CL_SUCCESS) {
-                std::cerr << "OpenCL: Failed to build the program\n";
-
-                std::size_t log_size;
-                clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &log_size);
-                std::unique_ptr<char[]> log = std::make_unique<char[]>(log_size + 1);
-                log[log_size] = 0;
-                clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, log_size, log.get(), nullptr);
-                std::cerr << log.get() << std::endl;
-
-                clReleaseProgram(program);
-                clReleaseContext(context);
-                break;
-            }
-        }
-
-        std::cout << "OpenCL: Initialized, trying cl_impl..." << std::endl;
-        std::vector<bool> result = internal::blue_noise_cl_impl(
-            width, height, filter_size, context, device, program);
-
-        clReleaseProgram(program);
-        clReleaseContext(context);
-
-        if(!result.empty()) {
-            return result;
-        }
-    } while (false);
-
-    if(!use_opencl) {
-        std::cout << "OpenCL: Failed to setup/use, using regular impl..." << std::endl;
-        return internal::blue_noise_impl(width, height, threads);
+    if(!using_opencl) {
+        std::cout << "OpenCL: Failed to setup/use or is not enabled, using regular impl..."
+            << std::endl;
+        return internal::toBl(internal::blue_noise_impl(width, height, threads), width);
     }
 
     return {};
