@@ -53,6 +53,7 @@ namespace image {
         Bl(int width, int height);
         Bl(const std::vector<uint8_t> &data, int width);
         Bl(std::vector<uint8_t> &&data, int width);
+        Bl(const std::vector<float> &data, int width);
         virtual ~Bl() {}
 
         Bl(const Bl &other) = default;

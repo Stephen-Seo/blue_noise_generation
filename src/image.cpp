@@ -27,6 +27,16 @@ width(width),
 height(data.size() / width)
 {}
 
+image::Bl::Bl(const std::vector<float> &data, int width) :
+    data{},
+    width(width),
+    height(data.size() / width)
+{
+    for(float gspixel : data) {
+        this->data.push_back(static_cast<uint8_t>(255.0F * gspixel));
+    }
+}
+
 void image::Bl::randomize() {
     if(!isValid()) {
         return;
@@ -112,7 +122,7 @@ bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filen
         return false;
     }
     for(unsigned int i = 0; i < data.size(); ++i) {
-        if(i % width == 0) {
+        if(type == file_type::PBM && i % width == 0) {
             fprintf(file, "\n");
         }
         switch(type) {
@@ -120,10 +130,14 @@ bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filen
             fprintf(file, "%d ", data[i] == 0 ? 0 : 1);
             break;
         case file_type::PGM:
-            fprintf(file, "%c ", data[i]);
+            //fprintf(file, "%c ", data[i]);
+            fputc(data[i], file);
             break;
         case file_type::PPM:
-            fprintf(file, "%c %c %c ", data[i], data[i], data[i]);
+            //fprintf(file, "%c %c %c ", data[i], data[i], data[i]);
+            fputc(data[i], file);
+            fputc(data[i], file);
+            fputc(data[i], file);
             break;
         default:
             fclose(file);

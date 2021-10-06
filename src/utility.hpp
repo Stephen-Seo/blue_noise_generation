@@ -5,7 +5,9 @@
 #include <cmath>
 
 namespace utility {
-    inline int twoToOne(int x, int y, int width) {
+    inline int twoToOne(int x, int y, int width, int height) {
+        x = x % width;
+        y = y % height;
         return x + y * width;
     }
 
