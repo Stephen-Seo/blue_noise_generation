@@ -110,9 +110,13 @@ image::Bl dither::blue_noise_grayscale(int width, int height, int threads) {
     std::vector<float> image = internal::random_noise_grayscale(count);
 
     int iterations = 0;
-    int filter_size = (width + height) / 4;
+    int filter_size = (width + height) / 2;
     std::vector<float> precomputed(internal::precompute_gaussian(filter_size));
 
+    int min, max;
+    float tempPixel;
+    int prevmin = -1;
+    int prevmax = -1;
     while(true) {
         printf("Iteration %d\n", iterations);
 
@@ -121,10 +125,6 @@ image::Bl dither::blue_noise_grayscale(int width, int height, int threads) {
                                            filter_size, filter_out,
                                            &precomputed, threads);
 
-        int min, max;
-        float tempPixel;
-        int prevmin = -1;
-        int prevmax = -1;
         std::tie(min, max) = internal::filter_minmax(filter_out);
         printf("min == %4d, max == %4d\n", min, max);
         tempPixel = image[max];
