@@ -113,10 +113,8 @@ image::Bl dither::blue_noise_grayscale(int width, int height, int threads) {
     int filter_size = (width + height) / 2;
     std::vector<float> precomputed(internal::precompute_gaussian(filter_size));
 
-    int min, max;
+    int min, max, min2, max2;
     float tempPixel;
-    int prevmin = -1;
-    int prevmax = -1;
     while(true) {
         printf("Iteration %d\n", iterations);
 
@@ -126,17 +124,25 @@ image::Bl dither::blue_noise_grayscale(int width, int height, int threads) {
                                            &precomputed, threads);
 
         std::tie(min, max) = internal::filter_minmax(filter_out);
-        printf("min == %4d, max == %4d\n", min, max);
+        printf("min == %4d, max == %4d", min, max);
         tempPixel = image[max];
-        image[max] = image[min];
-        image[min] = tempPixel;
-        if(prevmin >= 0 && prevmax >= 0
-                && (utility::dist(min, prevmin, width) < 1.5F
-                    || utility::dist(max, prevmax, width) < 1.5F)) {
+        image[max] = 0.0F;
+
+        internal::compute_filter_grayscale(image,
+                                           width, height, count,
+                                           filter_size, filter_out,
+                                           &precomputed, threads);
+
+        std::tie(min2, max2) = internal::filter_minmax(filter_out);
+        printf(", min2 == %4d, max2 == %4d\n", min2, max2);
+
+        if(utility::dist(min, min2, width) < 1.5F) {
+            image[max] = image[min2];
+            image[min2] = tempPixel;
+        } else {
+            image[max] = tempPixel;
             break;
         }
-        prevmin = min;
-        prevmax = max;
 
 //#ifndef NDEBUG
         if(iterations % 20 == 0) {
