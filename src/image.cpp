@@ -111,11 +111,11 @@ bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filen
         break;
     case file_type::PGM:
         file = fopen(filename, "wb");
-        fprintf(file, "P5\n%d %d\n255", width, height);
+        fprintf(file, "P5\n%d %d\n255\n", width, height);
         break;
     case file_type::PPM:
         file = fopen(filename, "wb");
-        fprintf(file, "P6\n%d %d\n255", width, height);
+        fprintf(file, "P6\n%d %d\n255\n", width, height);
         break;
     default:
         fclose(file);
