@@ -113,7 +113,21 @@ image::Bl dither::blue_noise_grayscale(int width, int height, int threads) {
     int filter_size = (width + height) / 2;
     std::vector<float> precomputed(internal::precompute_gaussian(filter_size));
 
+    // TODO DEBUG
+    //float pmax = 0.01F;
+    //for(float value : precomputed) {
+    //    if(value > pmax) {
+    //        pmax = value;
+    //    }
+    //}
+    //for(float &value: precomputed) {
+    //    value /= pmax;
+    //}
+    //return image::Bl(precomputed, filter_size);
+
     int min, max, min2, max2;
+    int prevmax = -1;
+    int prevmax2 = -1;
     float tempPixel;
     while(true) {
         printf("Iteration %d\n", iterations);
@@ -121,9 +135,14 @@ image::Bl dither::blue_noise_grayscale(int width, int height, int threads) {
         internal::compute_filter_grayscale(image,
                                            width, height, count,
                                            filter_size, filter_out,
-                                           &precomputed, threads);
+                                           &precomputed, 0);
 
         std::tie(min, max) = internal::filter_minmax(filter_out);
+        //std::tie(std::ignore, max) = internal::filter_minmax_in_range(max,
+        //                                                              width,
+        //                                                              height,
+        //                                                              7,
+        //                                                              filter_out);
         printf("min == %4d, max == %4d", min, max);
         tempPixel = image[max];
         image[max] = 0.0F;
@@ -131,18 +150,33 @@ image::Bl dither::blue_noise_grayscale(int width, int height, int threads) {
         internal::compute_filter_grayscale(image,
                                            width, height, count,
                                            filter_size, filter_out,
-                                           &precomputed, threads);
+                                           &precomputed, 0);
 
         std::tie(min2, max2) = internal::filter_minmax(filter_out);
+        //std::tie(min2, std::ignore) = internal::filter_minmax_in_range(min2,
+        //                                                               width,
+        //                                                               height,
+        //                                                               7,
+        //                                                               filter_out);
         printf(", min2 == %4d, max2 == %4d\n", min2, max2);
 
-        if(utility::dist(min, min2, width) < 1.5F) {
-            image[max] = image[min2];
-            image[min2] = tempPixel;
-        } else {
+        if(min2 != min) {
             image[max] = tempPixel;
             break;
+        } else {
+            image[max] = image[min];
+            image[min] = tempPixel;
         }
+        //if(prevmax == max && prevmax2 == max2) {
+        //    image[max] = tempPixel;
+        //    break;
+        //} else {
+        //    image[max] = image[min2];
+        //    image[min2] = tempPixel;
+        //}
+
+        prevmax = max;
+        prevmax2 = max2;
 
 //#ifndef NDEBUG
         if(iterations % 20 == 0) {
@@ -156,13 +190,62 @@ image::Bl dither::blue_noise_grayscale(int width, int height, int threads) {
             name.append(std::to_string(iterations));
             name.append(".pgm");
             image::Bl(image, width).writeToFile(image::file_type::PGM, true, name);
+
+            name.clear();
+            name.append("tempFilter");
+            if(iterations < 10) {
+                name.append("00");
+            } else if(iterations < 100) {
+                name.append("0");
+            }
+            name.append(std::to_string(iterations));
+            name.append(".pgm");
+
+            internal::compute_filter_grayscale(image,
+                                               width, height, count,
+                                               filter_size, filter_out,
+                                               &precomputed, 0);
+            std::vector<float> normalizedFilter(filter_out);
+            float fmax = -std::numeric_limits<float>::infinity();
+            float fmin = std::numeric_limits<float>::infinity();
+            for(float value : normalizedFilter) {
+                if(value > fmax) {
+                    fmax = value;
+                }
+                if(value < fmin) {
+                    fmin = value;
+                }
+            }
+            fmax -= fmin;
+            for(float &value : normalizedFilter) {
+                value = (value - fmin) / fmax;
+            }
+            image::Bl(normalizedFilter, width).writeToFile(image::file_type::PGM, true, name);
         }
 //#endif
         ++iterations;
     }
 
-    // TODO
-
+    internal::compute_filter_grayscale(image,
+                                       width, height, count,
+                                       filter_size, filter_out,
+                                       &precomputed, 0);
+    std::vector<float> normalizedFilter(filter_out);
+    float fmax = -std::numeric_limits<float>::infinity();
+    float fmin = std::numeric_limits<float>::infinity();
+    for(float value : normalizedFilter) {
+        if(value > fmax) {
+            fmax = value;
+        }
+        if(value < fmin) {
+            fmin = value;
+        }
+    }
+    fmax -= fmin;
+    for(float &value : normalizedFilter) {
+        value = (value - fmin) / fmax;
+    }
+    image::Bl(normalizedFilter, width).writeToFile(image::file_type::PGM, true, "filterOut.pgm");
     return image::Bl(image, width);
 }
 

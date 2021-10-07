@@ -6,6 +6,12 @@
 
 namespace utility {
     inline int twoToOne(int x, int y, int width, int height) {
+        while(x < 0) {
+            x += width;
+        }
+        while(y < 0) {
+            y += height;
+        }
         x = x % width;
         y = y % height;
         return x + y * width;

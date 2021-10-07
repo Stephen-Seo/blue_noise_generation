@@ -12,6 +12,9 @@
 #include <queue>
 #include <random>
 #include <cassert>
+#include <stdexcept>
+
+#include <sys/sysinfo.h>
 
 #include <CL/opencl.h>
 
@@ -64,7 +67,7 @@ namespace internal {
 
         for(unsigned int i = 0; i < size; ++i) {
             graynoise.push_back(static_cast<float>(i) / static_cast<float>(size - 1));
-            //graynoise[i] = dist(re);
+            //graynoise.push_back(dist(re));
         }
         for(unsigned int i = 0; i < size - 1; ++i) {
             std::uniform_int_distribution<unsigned int> range(i + 1, size - 1);
@@ -77,10 +80,12 @@ namespace internal {
         return graynoise;
     }
 
-    constexpr float mu_squared = 1.5f * 1.5f;
+    constexpr float mu = 1.5F;
+    constexpr float mu_squared = mu * mu;
+    constexpr float double_mu_squared = 2.0F * mu * mu;
 
     inline float gaussian(float x, float y) {
-        return std::exp(-(x*x + y*y)/(2*mu_squared));
+        return std::exp(-(x*x + y*y)/(double_mu_squared));
     }
 
     inline std::vector<float> precompute_gaussian(int size) {
@@ -90,7 +95,8 @@ namespace internal {
         for(int i = 0; i < size * size; ++i) {
             auto xy = utility::oneToTwo(i, size);
             precomputed.push_back(gaussian(
-                (float)xy.first - size / 2.0f, (float)xy.second - size / 2.0f));
+                (float)xy.first - (float)size / 2.0f,
+                (float)xy.second - (float)size / 2.0f));
         }
 
         return precomputed;
@@ -166,11 +172,14 @@ namespace internal {
         float sum = 0.0F;
 
         for(int q = 0; q < filter_size; ++q) {
-            int q_prime = (height + filter_size / 2 + y - q) % height;
+            int q_prime = (height - filter_size / 2 + y + q) % height;
             for(int p = 0; p < filter_size; ++p) {
-                int p_prime = (width + filter_size / 2 + x - p) % width;
+                int p_prime = (width - filter_size / 2 + x + p) % width;
                 sum += image[utility::twoToOne(p_prime, q_prime, width, height)]
-                        * precomputed[utility::twoToOne(p, q, filter_size, filter_size)];
+                        * precomputed[utility::twoToOne(p,
+                                                        q,
+                                                        filter_size,
+                                                        filter_size)];
             }
         }
 
@@ -277,34 +286,86 @@ namespace internal {
             int count, int filter_size, std::vector<float> &filter_out,
             const std::vector<float> *precomputed = nullptr,
             int threads = 1) {
-        if(precomputed) {
-            for(int y = 0; y < height; ++y) {
-                for(int x = 0; x < width; ++x) {
-                    filter_out[utility::twoToOne(x, y, width, height)] =
-                        internal::filter_with_precomputed_grayscale(
-                            image,
-                            x, y,
-                            width, height,
-                            filter_size,
-                            *precomputed);
+        if(threads == 1) {
+            if(precomputed) {
+                for(int y = 0; y < height; ++y) {
+                    for(int x = 0; x < width; ++x) {
+                        filter_out[utility::twoToOne(x, y, width, height)] =
+                            internal::filter_with_precomputed_grayscale(
+                                image,
+                                x, y,
+                                width, height,
+                                filter_size,
+                                *precomputed);
+                    }
+                }
+            } else {
+                for(int y = 0; y < height; ++y) {
+                    for(int x = 0; x < width; ++x) {
+                        filter_out[utility::twoToOne(x, y, width, height)] =
+                            internal::filter_grayscale(image,
+                                                       x, y,
+                                                       width, height,
+                                                       filter_size);
+                    }
                 }
             }
         } else {
-            for(int y = 0; y < height; ++y) {
-                for(int x = 0; x < width; ++x) {
-                    filter_out[utility::twoToOne(x, y, width, height)] =
-                        internal::filter_grayscale(image,
-                                                   x, y,
-                                                   width, height,
-                                                   filter_size);
+            if(threads == 0) {
+                threads = get_nprocs();
+                if(threads == 0) {
+                    throw std::runtime_error("0 threads detected, "
+                            "should be impossible");
                 }
+            }
+
+            if(precomputed) {
+                const auto tfn = [] (unsigned int ymin, unsigned int ymax,
+                                     unsigned int width, unsigned int height,
+                                     unsigned int filter_size,
+                                     const std::vector<float> *const image,
+                                     std::vector<float> *const filter_out,
+                                     const std::vector<float> *const precomputed) {
+                    for(unsigned int y = ymin; y < ymax; ++y) {
+                        for(unsigned int x = 0; x < width; ++x) {
+                            (*filter_out)[utility::twoToOne(x, y, width, height)] =
+                                internal::filter_with_precomputed_grayscale(
+                                    *image,
+                                    x, y,
+                                    width, height,
+                                    filter_size,
+                                    *precomputed);
+                        }
+                    }
+                };
+                unsigned int step = height / threads;
+                std::vector<std::thread> threadHandles;
+                for(int i = 0; i < threads; ++i) {
+                    unsigned int starty = i * step;
+                    unsigned int endy = (i + 1) * step;
+                    if(i + 1 == threads) {
+                        endy = height;
+                    }
+                    threadHandles.emplace_back(tfn, starty, endy,
+                                               width, height,
+                                               filter_size,
+                                               &image,
+                                               &filter_out,
+                                               precomputed);
+                }
+                for(int i = 0; i < threads; ++i) {
+                    threadHandles[i].join();
+                }
+            } else {
+                // TODO unimplemented
+                throw std::runtime_error("Unimplemented");
             }
         }
     }
 
     inline std::pair<int, int> filter_minmax(const std::vector<float>& filter) {
         float min = std::numeric_limits<float>::infinity();
-        float max = 0.0f;
+        float max = -std::numeric_limits<float>::infinity();
         int min_index = 0;
         int max_index = 0;
 
@@ -415,6 +476,44 @@ namespace internal {
         }
 
         return bwImage;
+    }
+
+    inline std::pair<int, int> filter_minmax_in_range(int start, int width,
+                                                   int height,
+                                                   int range,
+                                                   const std::vector<float> &vec) {
+        float max = -std::numeric_limits<float>::infinity();
+        float min = std::numeric_limits<float>::infinity();
+
+        int maxIdx = -1;
+        int minIdx = -1;
+
+        auto startXY = utility::oneToTwo(start, width);
+        for(int y = startXY.second - range / 2; y <= startXY.second + range / 2; ++y) {
+            for(int x = startXY.first - range / 2; x <= startXY.first + range / 2; ++x) {
+                int idx = utility::twoToOne(x, y, width, height);
+                if(idx == start) {
+                    continue;
+                }
+
+                if(vec[idx] < min) {
+                    min = vec[idx];
+                    minIdx = idx;
+                }
+
+                if(vec[idx] > max) {
+                    max = vec[idx];
+                    maxIdx = idx;
+                }
+            }
+        }
+
+        if(minIdx < 0) {
+            throw std::runtime_error("Invalid minIdx value");
+        } else if(maxIdx < 0) {
+            throw std::runtime_error("Invalid maxIdx value");
+        }
+        return {minIdx, maxIdx};
     }
 } // namespace dither::internal
 
