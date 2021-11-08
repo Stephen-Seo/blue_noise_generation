@@ -18,12 +18,15 @@ endif()
 
 find_package(Threads REQUIRED)
 find_package(OpenCL REQUIRED)
+find_package(PNG REQUIRED)
 
 add_executable(Dithering ${Dithering_SOURCES})
 target_compile_features(Dithering PUBLIC cxx_std_17)
 target_include_directories(Dithering PUBLIC
     Threads::Threads
-    ${OpenCL_INCLUDE_DIRS})
+    ${OpenCL_INCLUDE_DIRS}
+    ${PNG_INCLUDE_DIRS})
 target_link_libraries(Dithering PUBLIC 
     Threads::Threads
-    ${OpenCL_LIBRARIES})
+    ${OpenCL_LIBRARIES}
+    ${PNG_LIBRARIES})

@@ -1,6 +1,7 @@
 #ifndef BLUE_NOISE_HPP
 #define BLUE_NOISE_HPP
 
+#include <limits>
 #include <vector>
 #include <functional>
 #include <unordered_set>
@@ -13,6 +14,7 @@
 #include <random>
 #include <cassert>
 #include <stdexcept>
+#include <iostream>
 
 #include <sys/sysinfo.h>
 
@@ -25,11 +27,9 @@ namespace dither {
 
 image::Bl blue_noise(int width, int height, int threads = 1, bool use_opencl = true);
 
-image::Bl blue_noise_grayscale(int width, int height, int threads = 1);
-
 namespace internal {
-    std::vector<bool> blue_noise_impl(int width, int height, int threads = 1);
-    std::vector<bool> blue_noise_cl_impl(
+    std::vector<unsigned int> blue_noise_impl(int width, int height, int threads = 1);
+    std::vector<unsigned int> blue_noise_cl_impl(
         int width, int height, int filter_size,
         cl_context context, cl_device_id device, cl_program program);
 
@@ -59,27 +59,6 @@ namespace internal {
         return pbp;
     }
 
-    inline std::vector<float> random_noise_grayscale(unsigned int size) {
-        std::vector<float> graynoise;
-        graynoise.reserve(size);
-        std::default_random_engine re(std::random_device{}());
-        std::uniform_real_distribution<float> dist(0.0F, 1.0F);
-
-        for(unsigned int i = 0; i < size; ++i) {
-            graynoise.push_back(static_cast<float>(i) / static_cast<float>(size - 1));
-            //graynoise.push_back(dist(re));
-        }
-        for(unsigned int i = 0; i < size - 1; ++i) {
-            std::uniform_int_distribution<unsigned int> range(i + 1, size - 1);
-            unsigned int ridx = range(re);
-            float temp = graynoise[i];
-            graynoise[i] = graynoise[ridx];
-            graynoise[ridx] = temp;
-        }
-
-        return graynoise;
-    }
-
     constexpr float mu = 1.5F;
     constexpr float mu_squared = mu * mu;
     constexpr float double_mu_squared = 2.0F * mu * mu;
@@ -95,8 +74,8 @@ namespace internal {
         for(int i = 0; i < size * size; ++i) {
             auto xy = utility::oneToTwo(i, size);
             precomputed.push_back(gaussian(
-                (float)xy.first - (float)size / 2.0f,
-                (float)xy.second - (float)size / 2.0f));
+                (float)xy.first - (float)size / 2.0F + 0.5F,
+                (float)xy.second - (float)size / 2.0F + 0.5F));
         }
 
         return precomputed;
@@ -113,31 +92,13 @@ namespace internal {
         // p' = (M + x - (p - M/2)) % M = (3M/2 + x - p) % M
         // q' = (N + y - (q - M/2)) % N = (N + M/2 + y - q) % N
         for(int q = 0; q < filter_size; ++q) {
-            int q_prime = (height + filter_size / 2 + y - q) % height;
+            int q_prime = (height - filter_size / 2 + y + q) % height;
             for(int p = 0; p < filter_size; ++p) {
-                int p_prime = (width + filter_size / 2 + x - p) % width;
+                int p_prime = (width - filter_size / 2 + x + p) % width;
                 if(pbp[utility::twoToOne(p_prime, q_prime, width, height)]) {
-                    sum += gaussian((float)p - filter_size/2.0f,
-                                    (float)q - filter_size/2.0f);
+                    sum += gaussian((float)p - filter_size/2.0F + 0.5F,
+                                    (float)q - filter_size/2.0F + 0.5F);
                 }
-            }
-        }
-
-        return sum;
-    }
-
-    inline float filter_grayscale(
-            const std::vector<float> &image,
-            int x, int y,
-            int width, int height, int filter_size) {
-        float sum = 0.0F;
-        for(int q = 0; q < filter_size; ++q) {
-            int q_prime = (height + filter_size / 2 + y - q) % height;
-            for(int p = 0; p < filter_size; ++p) {
-                int p_prime = (width + filter_size / 2 + x - p) % width;
-                sum += image[utility::twoToOne(p_prime, q_prime, width, height)]
-                        * gaussian((float)p - filter_size/2.0F,
-                                   (float)q - filter_size/2.0F);
             }
         }
 
@@ -152,34 +113,12 @@ namespace internal {
         float sum = 0.0f;
 
         for(int q = 0; q < filter_size; ++q) {
-            int q_prime = (height + filter_size / 2 + y - q) % height;
-            for(int p = 0; p < filter_size; ++p) {
-                int p_prime = (width + filter_size / 2 + x - p) % width;
-                if(pbp[utility::twoToOne(p_prime, q_prime, width, height)]) {
-                    sum += precomputed[utility::twoToOne(p, q, filter_size, filter_size)];
-                }
-            }
-        }
-
-        return sum;
-    }
-
-    inline float filter_with_precomputed_grayscale(
-            const std::vector<float>& image,
-            int x, int y,
-            int width, int height, int filter_size,
-            const std::vector<float> &precomputed) {
-        float sum = 0.0F;
-
-        for(int q = 0; q < filter_size; ++q) {
             int q_prime = (height - filter_size / 2 + y + q) % height;
             for(int p = 0; p < filter_size; ++p) {
                 int p_prime = (width - filter_size / 2 + x + p) % width;
-                sum += image[utility::twoToOne(p_prime, q_prime, width, height)]
-                        * precomputed[utility::twoToOne(p,
-                                                        q,
-                                                        filter_size,
-                                                        filter_size)];
+                if(pbp[utility::twoToOne(p_prime, q_prime, width, height)]) {
+                    sum += precomputed[utility::twoToOne(p, q, filter_size, filter_size)];
+                }
             }
         }
 
@@ -281,95 +220,61 @@ namespace internal {
 
     }
 
-    inline void compute_filter_grayscale(
-            const std::vector<float> &image, int width, int height,
-            int count, int filter_size, std::vector<float> &filter_out,
-            const std::vector<float> *precomputed = nullptr,
-            int threads = 1) {
-        if(threads == 1) {
-            if(precomputed) {
-                for(int y = 0; y < height; ++y) {
-                    for(int x = 0; x < width; ++x) {
-                        filter_out[utility::twoToOne(x, y, width, height)] =
-                            internal::filter_with_precomputed_grayscale(
-                                image,
-                                x, y,
-                                width, height,
-                                filter_size,
-                                *precomputed);
-                    }
-                }
-            } else {
-                for(int y = 0; y < height; ++y) {
-                    for(int x = 0; x < width; ++x) {
-                        filter_out[utility::twoToOne(x, y, width, height)] =
-                            internal::filter_grayscale(image,
-                                                       x, y,
-                                                       width, height,
-                                                       filter_size);
-                    }
-                }
-            }
-        } else {
-            if(threads == 0) {
-                threads = get_nprocs();
-                if(threads == 0) {
-                    throw std::runtime_error("0 threads detected, "
-                            "should be impossible");
-                }
-            }
-
-            if(precomputed) {
-                const auto tfn = [] (unsigned int ymin, unsigned int ymax,
-                                     unsigned int width, unsigned int height,
-                                     unsigned int filter_size,
-                                     const std::vector<float> *const image,
-                                     std::vector<float> *const filter_out,
-                                     const std::vector<float> *const precomputed) {
-                    for(unsigned int y = ymin; y < ymax; ++y) {
-                        for(unsigned int x = 0; x < width; ++x) {
-                            (*filter_out)[utility::twoToOne(x, y, width, height)] =
-                                internal::filter_with_precomputed_grayscale(
-                                    *image,
-                                    x, y,
-                                    width, height,
-                                    filter_size,
-                                    *precomputed);
-                        }
-                    }
-                };
-                unsigned int step = height / threads;
-                std::vector<std::thread> threadHandles;
-                for(int i = 0; i < threads; ++i) {
-                    unsigned int starty = i * step;
-                    unsigned int endy = (i + 1) * step;
-                    if(i + 1 == threads) {
-                        endy = height;
-                    }
-                    threadHandles.emplace_back(tfn, starty, endy,
-                                               width, height,
-                                               filter_size,
-                                               &image,
-                                               &filter_out,
-                                               precomputed);
-                }
-                for(int i = 0; i < threads; ++i) {
-                    threadHandles[i].join();
-                }
-            } else {
-                // TODO unimplemented
-                throw std::runtime_error("Unimplemented");
+    inline std::pair<int, int> filter_minmax(const std::vector<float> &filter,
+                                             std::vector<bool> pbp) {
+        // ensure minority pixel is "true"
+        unsigned int count = 0;
+        for (bool value : pbp) {
+            if(value) {
+                ++count;
             }
         }
-    }
+        if (count * 2 >= pbp.size()) {
+            for (unsigned int i = 0; i < pbp.size(); ++i) {
+                pbp[i] = !pbp[i];
+            }
+        }
 
-    inline std::pair<int, int> filter_minmax(const std::vector<float>& filter) {
         float min = std::numeric_limits<float>::infinity();
         float max = -std::numeric_limits<float>::infinity();
-        int min_index = 0;
-        int max_index = 0;
+        int min_index = -1;
+        int max_index = -1;
 
         for(std::vector<float>::size_type i = 0; i < filter.size(); ++i) {
+            if(!pbp[i] && filter[i] < min) {
+                min_index = i;
+                min = filter[i];
+            }
+            if(pbp[i] && filter[i] > max) {
+                max_index = i;
+                max = filter[i];
+            }
+        }
+
+        return {min_index, max_index};
+    }
+
+    inline std::pair<int, int> filter_abs_minmax(
+            const std::vector<float> &filter) {
+        float min = std::numeric_limits<float>::infinity();
+        float max = -std::numeric_limits<float>::infinity();
+        int min_index = -1;
+        int max_index = -1;
+
+        std::default_random_engine re(std::random_device{}());
+        std::size_t startIdx = std::uniform_int_distribution<std::size_t>(0, filter.size() - 1)(re);
+
+        for(std::vector<float>::size_type i = startIdx; i < filter.size(); ++i) {
+            if(filter[i] < min) {
+                min_index = i;
+                min = filter[i];
+            }
+            if(filter[i] > max) {
+                max_index = i;
+                max = filter[i];
+            }
+        }
+        for(std::vector<float>::size_type i = 0; i < startIdx; ++i) {
             if(filter[i] < min) {
                 min_index = i;
                 min = filter[i];
@@ -449,7 +354,7 @@ namespace internal {
 
     inline void write_filter(const std::vector<float> &filter, int width, const char *filename) {
         int min, max;
-        std::tie(min, max) = filter_minmax(filter);
+        std::tie(min, max) = filter_abs_minmax(filter);
 
         printf("Writing to %s, min is %.3f, max is %.3f\n", filename, filter[min], filter[max]);
         FILE *filter_image = fopen(filename, "w");
@@ -472,10 +377,38 @@ namespace internal {
                 && "New image::Bl size too small (pbp's size is not a multiple of width)");
 
         for(unsigned int i = 0; i < pbp.size(); ++i) {
-            bwImage.getData()[i] = pbp[i] ? 1 : 0;
+            bwImage.getData()[i] = pbp[i] ? 255 : 0;
         }
 
         return bwImage;
+    }
+
+    inline image::Bl rangeToBl(const std::vector<unsigned int> &values, int width) {
+        int min = std::numeric_limits<int>::max();
+        int max = std::numeric_limits<int>::min();
+
+        for (int value : values) {
+            if (value < min) {
+                min = value;
+            }
+            if (value > max) {
+                max = value;
+            }
+        }
+
+        std::cout << "rangeToBl: Got min == " << min << " and max == " << max << std::endl;
+
+        max -= min;
+
+        image::Bl grImage(width, values.size() / width);
+        assert((unsigned long)grImage.getSize() >= values.size()
+                && "New image::Bl size too small (values' size is not a multiple of width)");
+
+        for(unsigned int i = 0; i < values.size(); ++i) {
+            grImage.getData()[i] = ((float)((int)(values[i]) - min) / (float)max) * 255.0F;
+        }
+
+        return grImage;
     }
 
     inline std::pair<int, int> filter_minmax_in_range(int start, int width,

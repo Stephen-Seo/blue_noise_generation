@@ -18,7 +18,7 @@ namespace image {
         PBM,
         PGM,
         PPM,
-        // TODO PNG support
+        PNG,
     };
 
     class Base {

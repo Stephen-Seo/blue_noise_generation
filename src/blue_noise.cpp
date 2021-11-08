@@ -6,6 +6,7 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <unordered_set>
 
 #include <CL/opencl.h>
 
@@ -81,14 +82,14 @@ image::Bl dither::blue_noise(int width, int height, int threads, bool use_opencl
             }
 
             std::cout << "OpenCL: Initialized, trying cl_impl..." << std::endl;
-            std::vector<bool> result = internal::blue_noise_cl_impl(
+            std::vector<unsigned int> result = internal::blue_noise_cl_impl(
                 width, height, filter_size, context, device, program);
 
             clReleaseProgram(program);
             clReleaseContext(context);
 
             if(!result.empty()) {
-                return internal::toBl(result, width);
+                return internal::rangeToBl(result, width);
             }
         } while (false);
     }
@@ -96,160 +97,13 @@ image::Bl dither::blue_noise(int width, int height, int threads, bool use_opencl
     if(!using_opencl) {
         std::cout << "OpenCL: Failed to setup/use or is not enabled, using regular impl..."
             << std::endl;
-        return internal::toBl(internal::blue_noise_impl(width, height, threads), width);
+        return internal::rangeToBl(internal::blue_noise_impl(width, height, threads), width);
     }
 
     return {};
 }
 
-image::Bl dither::blue_noise_grayscale(int width, int height, int threads) {
-    int count = width * height;
-    std::vector<float> filter_out;
-    filter_out.resize(count);
-
-    std::vector<float> image = internal::random_noise_grayscale(count);
-
-    int iterations = 0;
-    int filter_size = (width + height) / 2;
-    std::vector<float> precomputed(internal::precompute_gaussian(filter_size));
-
-    // TODO DEBUG
-    //float pmax = 0.01F;
-    //for(float value : precomputed) {
-    //    if(value > pmax) {
-    //        pmax = value;
-    //    }
-    //}
-    //for(float &value: precomputed) {
-    //    value /= pmax;
-    //}
-    //return image::Bl(precomputed, filter_size);
-
-    int min, max, min2, max2;
-    int prevmax = -1;
-    int prevmax2 = -1;
-    float tempPixel;
-    while(true) {
-        printf("Iteration %d\n", iterations);
-
-        internal::compute_filter_grayscale(image,
-                                           width, height, count,
-                                           filter_size, filter_out,
-                                           &precomputed, 0);
-
-        std::tie(min, max) = internal::filter_minmax(filter_out);
-        //std::tie(std::ignore, max) = internal::filter_minmax_in_range(max,
-        //                                                              width,
-        //                                                              height,
-        //                                                              7,
-        //                                                              filter_out);
-        printf("min == %4d, max == %4d", min, max);
-        tempPixel = image[max];
-        image[max] = 0.0F;
-
-        internal::compute_filter_grayscale(image,
-                                           width, height, count,
-                                           filter_size, filter_out,
-                                           &precomputed, 0);
-
-        std::tie(min2, max2) = internal::filter_minmax(filter_out);
-        //std::tie(min2, std::ignore) = internal::filter_minmax_in_range(min2,
-        //                                                               width,
-        //                                                               height,
-        //                                                               7,
-        //                                                               filter_out);
-        printf(", min2 == %4d, max2 == %4d\n", min2, max2);
-
-        if(min2 != min) {
-            image[max] = tempPixel;
-            break;
-        } else {
-            image[max] = image[min];
-            image[min] = tempPixel;
-        }
-        //if(prevmax == max && prevmax2 == max2) {
-        //    image[max] = tempPixel;
-        //    break;
-        //} else {
-        //    image[max] = image[min2];
-        //    image[min2] = tempPixel;
-        //}
-
-        prevmax = max;
-        prevmax2 = max2;
-
-//#ifndef NDEBUG
-        if(iterations % 20 == 0) {
-            std::string name;
-            name.append("tempGrayscale");
-            if(iterations < 10) {
-                name.append("00");
-            } else if(iterations < 100) {
-                name.append("0");
-            }
-            name.append(std::to_string(iterations));
-            name.append(".pgm");
-            image::Bl(image, width).writeToFile(image::file_type::PGM, true, name);
-
-            name.clear();
-            name.append("tempFilter");
-            if(iterations < 10) {
-                name.append("00");
-            } else if(iterations < 100) {
-                name.append("0");
-            }
-            name.append(std::to_string(iterations));
-            name.append(".pgm");
-
-            internal::compute_filter_grayscale(image,
-                                               width, height, count,
-                                               filter_size, filter_out,
-                                               &precomputed, 0);
-            std::vector<float> normalizedFilter(filter_out);
-            float fmax = -std::numeric_limits<float>::infinity();
-            float fmin = std::numeric_limits<float>::infinity();
-            for(float value : normalizedFilter) {
-                if(value > fmax) {
-                    fmax = value;
-                }
-                if(value < fmin) {
-                    fmin = value;
-                }
-            }
-            fmax -= fmin;
-            for(float &value : normalizedFilter) {
-                value = (value - fmin) / fmax;
-            }
-            image::Bl(normalizedFilter, width).writeToFile(image::file_type::PGM, true, name);
-        }
-//#endif
-        ++iterations;
-    }
-
-    internal::compute_filter_grayscale(image,
-                                       width, height, count,
-                                       filter_size, filter_out,
-                                       &precomputed, 0);
-    std::vector<float> normalizedFilter(filter_out);
-    float fmax = -std::numeric_limits<float>::infinity();
-    float fmin = std::numeric_limits<float>::infinity();
-    for(float value : normalizedFilter) {
-        if(value > fmax) {
-            fmax = value;
-        }
-        if(value < fmin) {
-            fmin = value;
-        }
-    }
-    fmax -= fmin;
-    for(float &value : normalizedFilter) {
-        value = (value - fmin) / fmax;
-    }
-    image::Bl(normalizedFilter, width).writeToFile(image::file_type::PGM, true, "filterOut.pgm");
-    return image::Bl(image, width);
-}
-
-std::vector<bool> dither::internal::blue_noise_impl(int width, int height, int threads) {
+std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int height, int threads) {
     int count = width * height;
     std::vector<float> filter_out;
     filter_out.resize(count);
@@ -301,36 +155,11 @@ std::vector<bool> dither::internal::blue_noise_impl(int width, int height, int t
 //        }
 #endif
 
-        int min, max, min_zero, max_one;
-        std::tie(min, max) = internal::filter_minmax(filter_out);
-        if(!pbp[max]) {
-            max_one = internal::get_one_or_zero(pbp, true, max, width, height);
-#ifndef NDEBUG
-            std::cout << "Post get_one(...)" << std::endl;
-#endif
-        } else {
-            max_one = max;
-        }
-        if(!pbp[max_one]) {
-            std::cerr << "ERROR: Failed to find pbp[max] one" << std::endl;
-            break;
-        }
-
-        if(pbp[min]) {
-            min_zero = internal::get_one_or_zero(pbp, false, min, width, height);
-#ifndef NDEBUG
-            std::cout << "Post get_zero(...)" << std::endl;
-#endif
-        } else {
-            min_zero = min;
-        }
-        if(pbp[min_zero]) {
-            std::cerr << "ERROR: Failed to find pbp[min] zero" << std::endl;
-            break;
-        }
+        int min, max;
+        std::tie(min, max) = internal::filter_minmax(filter_out, pbp);
 
         // remove 1
-        pbp[max_one] = false;
+        pbp[max] = false;
 
         // get filter values again
         internal::compute_filter(pbp, width, height, count, filter_size,
@@ -338,20 +167,13 @@ std::vector<bool> dither::internal::blue_noise_impl(int width, int height, int t
 
         // get second buffer's min
         int second_min;
-        std::tie(second_min, std::ignore) = internal::filter_minmax(filter_out);
-        if(pbp[second_min]) {
-            second_min = internal::get_one_or_zero(pbp, false, second_min, width, height);
-            if(pbp[second_min]) {
-                std::cerr << "ERROR: Failed to find pbp[second_min] zero" << std::endl;
-                break;
-            }
-        }
+        std::tie(second_min, std::ignore) = internal::filter_minmax(filter_out, pbp);
 
-        if(utility::dist(max_one, second_min, width) < 1.5f) {
-            pbp[max_one] = true;
+        if(second_min == max) {
+            pbp[max] = true;
             break;
         } else {
-            pbp[min_zero] = true;
+            pbp[second_min] = true;
         }
 
         if(iterations % 100 == 0) {
@@ -384,10 +206,45 @@ std::vector<bool> dither::internal::blue_noise_impl(int width, int height, int t
     fclose(blue_noise_image);
 //#endif
 
-    return pbp;
+    std::cout << "Generating dither_array...\n";
+    std::vector<unsigned int> dither_array(count);
+    int min, max;
+    {
+        std::vector<bool> pbp_copy(pbp);
+        std::cout << "Ranking minority pixels...\n";
+        for (unsigned int i = pixel_count; i-- > 0;) {
+            std::cout << i << ' ';
+            internal::compute_filter(pbp, width, height, count, filter_size,
+                    filter_out, precomputed.get(), threads);
+            std::tie(std::ignore, max) = internal::filter_minmax(filter_out, pbp);
+            pbp[max] = false;
+            dither_array[max] = i;
+        }
+        pbp = pbp_copy;
+    }
+    std::cout << "\nRanking remainder of first half of pixels...\n";
+    for (unsigned int i = pixel_count; i < (unsigned int)((count + 1) / 2); ++i) {
+        std::cout << i << ' ';
+        internal::compute_filter(pbp, width, height, count, filter_size,
+                filter_out, precomputed.get(), threads);
+        std::tie(min, std::ignore) = internal::filter_minmax(filter_out, pbp);
+        pbp[min] = true;
+        dither_array[min] = i;
+    }
+    std::cout << "\nRanking last half of pixels...\n";
+    for (unsigned int i = (count + 1) / 2; i < (unsigned int)count; ++i) {
+        std::cout << i << ' ';
+        internal::compute_filter(pbp, width, height, count, filter_size,
+                filter_out, precomputed.get(), threads);
+        std::tie(std::ignore, max) = internal::filter_minmax(filter_out, pbp);
+        pbp[max] = true;
+        dither_array[max] = i;
+    }
+
+    return dither_array;
 }
 
-std::vector<bool> dither::internal::blue_noise_cl_impl(
+std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
         int width, int height, int filter_size, cl_context context, cl_device_id device, cl_program program) {
     cl_int err;
     cl_kernel kernel;
@@ -417,18 +274,6 @@ std::vector<bool> dither::internal::blue_noise_cl_impl(
         clReleaseCommandQueue(queue);
         return {};
     }
-
-    /*
-    err = clEnqueueWriteBuffer(queue, d_pbp, CL_TRUE, 0, count * sizeof(int), &pbp_i[0], 0, nullptr, nullptr);
-    if(err != CL_SUCCESS) {
-        std::cerr << "OpenCL: Failed to write to d_pbp buffer\n";
-        clReleaseMemObject(d_pbp);
-        clReleaseMemObject(d_precomputed);
-        clReleaseMemObject(d_filter_out);
-        clReleaseCommandQueue(queue);
-        return {};
-    }
-    */
 
     kernel = clCreateKernel(program, "do_filter", &err);
     if(err != CL_SUCCESS) {
@@ -635,29 +480,10 @@ std::vector<bool> dither::internal::blue_noise_cl_impl(
             break;
         }
 
-        int min, max, min_zero, max_one;
-        std::tie(min, max) = internal::filter_minmax(filter);
-        if(!pbp[max]) {
-            max_one = internal::get_one_or_zero(pbp, true, max, width, height);
-        } else {
-            max_one = max;
-        }
-        if(!pbp[max_one]) {
-            std::cerr << "ERROR: Failed to find pbp[max] one" << std::endl;
-            break;
-        }
+        int min, max;
+        std::tie(min, max) = internal::filter_minmax(filter, pbp);
 
-        if(pbp[min]) {
-            min_zero = internal::get_one_or_zero(pbp, false, min, width, height);
-        } else {
-            min_zero = min;
-        }
-        if(pbp[min_zero]) {
-            std::cerr << "ERROR: Failed to find pbp[min] zero" << std::endl;
-            break;
-        }
-
-        pbp[max_one] = false;
+        pbp[max] = false;
 
         if(!get_filter()) {
             std::cerr << "OpenCL: Failed to execute do_filter\n";
@@ -666,20 +492,13 @@ std::vector<bool> dither::internal::blue_noise_cl_impl(
 
         // get second buffer's min
         int second_min;
-        std::tie(second_min, std::ignore) = internal::filter_minmax(filter);
-        if(pbp[second_min]) {
-            second_min = internal::get_one_or_zero(pbp, false, second_min, width, height);
-            if(pbp[second_min]) {
-                std::cerr << "ERROR: Failed to find pbp[second_min] zero" << std::endl;
-                break;
-            }
-        }
+        std::tie(second_min, std::ignore) = internal::filter_minmax(filter, pbp);
 
-        if(utility::dist(max_one, second_min, width) < 1.5f) {
-            pbp[max_one] = true;
+        if(second_min == max) {
+            pbp[max] = true;
             break;
         } else {
-            pbp[min_zero] = true;
+            pbp[second_min] = true;
         }
 
         if(iterations % 100 == 0) {
@@ -711,10 +530,83 @@ std::vector<bool> dither::internal::blue_noise_cl_impl(
         fclose(blue_noise_image);
     }
 
+#ifndef NDEBUG
+    {
+        image::Bl pbp_image = toBl(pbp, width);
+        pbp_image.writeToFile(image::file_type::PNG, true, "debug_pbp_before.png");
+    }
+#endif
+
+    std::cout << "Generating dither_array...\n";
+    std::unordered_set<unsigned int> set;
+    std::vector<unsigned int> dither_array(count);
+    int min, max;
+    {
+        std::vector<bool> pbp_copy(pbp);
+        std::cout << "Ranking minority pixels...\n";
+        for (unsigned int i = pixel_count; i-- > 0;) {
+            std::cout << i << ' ';
+            get_filter();
+            std::tie(std::ignore, max) = internal::filter_minmax(filter, pbp);
+            pbp.at(max) = false;
+            dither_array.at(max) = i;
+            if (set.find(max) != set.end()) {
+                std::cout << "\nWARNING: Reusing index " << max << '\n';
+            } else {
+                set.insert(max);
+            }
+        }
+        pbp = pbp_copy;
+    }
+    std::cout << "\nRanking remainder of first half of pixels...\n";
+    for (unsigned int i = pixel_count; i < (unsigned int)((count + 1) / 2); ++i) {
+        std::cout << i << ' ';
+        get_filter();
+        std::tie(min, std::ignore) = internal::filter_minmax(filter, pbp);
+        pbp.at(min) = true;
+        dither_array.at(min) = i;
+        if (set.find(min) != set.end()) {
+            std::cout << "\nWARNING: Reusing index " << min << '\n';
+        } else {
+            set.insert(min);
+        }
+    }
+#ifndef NDEBUG
+    {
+        get_filter();
+        internal::write_filter(filter, width, "filter_mid.pgm");
+        image::Bl pbp_image = toBl(pbp, width);
+        pbp_image.writeToFile(image::file_type::PNG, true, "debug_pbp_mid.png");
+    }
+#endif
+    std::cout << "\nRanking last half of pixels...\n";
+    for (unsigned int i = (count + 1) / 2; i < (unsigned int)count; ++i) {
+        std::cout << i << ' ';
+        get_filter();
+        std::tie(std::ignore, max) = internal::filter_minmax(filter, pbp);
+        pbp.at(max) = true;
+        dither_array.at(max) = i;
+        if (set.find(max) != set.end()) {
+            std::cout << "\nWARNING: Reusing index " << max << '\n';
+        } else {
+            set.insert(max);
+        }
+    }
+    std::cout << std::endl;
+
+#ifndef NDEBUG
+    {
+        get_filter();
+        internal::write_filter(filter, width, "filter_after.pgm");
+        image::Bl pbp_image = toBl(pbp, width);
+        pbp_image.writeToFile(image::file_type::PNG, true, "debug_pbp_after.png");
+    }
+#endif
+
     clReleaseKernel(kernel);
     clReleaseMemObject(d_pbp);
     clReleaseMemObject(d_precomputed);
     clReleaseMemObject(d_filter_out);
     clReleaseCommandQueue(queue);
-    return pbp;
+    return dither_array;
 }

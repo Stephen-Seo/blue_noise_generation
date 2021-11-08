@@ -2,6 +2,9 @@
 
 #include <cstdio>
 #include <random>
+#include <iostream>
+
+#include <png.h>
 
 image::Bl::Bl() :
 data(),
@@ -83,6 +86,7 @@ bool image::Bl::canWriteFile(file_type type) {
     case file_type::PBM:
     case file_type::PGM:
     case file_type::PPM:
+    case file_type::PNG:
         return true;
     default:
         return false;
@@ -102,6 +106,66 @@ bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filen
 
     if(file) {
         fclose(file);
+    }
+
+    if(type == file_type::PNG) {
+        FILE *outfile = fopen(filename, "wb");
+        if (outfile == nullptr) {
+            return false;
+        }
+        const static auto pngErrorLFn = [] (png_structp /* unused */,
+                                            png_const_charp message) {
+            std::cerr << "WARNING [libpng]: " << message << std::endl;
+        };
+        const static auto pngWarnLFn = [] (png_structp /* unused */,
+                                           png_const_charp message) {
+            std::cerr << "ERROR [libpng]: " << message << std::endl;
+        };
+
+        png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING,
+                                                      nullptr,
+                                                      pngErrorLFn,
+                                                      pngWarnLFn);
+
+        if (png_ptr == nullptr) {
+            fclose(outfile);
+            return false;
+        }
+
+        png_infop info_ptr = png_create_info_struct(png_ptr);
+        if (info_ptr == nullptr) {
+            png_destroy_write_struct(&png_ptr, nullptr);
+            fclose(outfile);
+            return false;
+        }
+
+        if (setjmp(png_jmpbuf(png_ptr))) {
+            png_destroy_write_struct(&png_ptr, &info_ptr);
+            fclose(outfile);
+            return false;
+        }
+
+        png_init_io(png_ptr, outfile);
+
+        png_set_IHDR(png_ptr, info_ptr, width, height, 8, PNG_COLOR_TYPE_GRAY,
+                     PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
+                     PNG_FILTER_TYPE_DEFAULT);
+
+        png_write_info(png_ptr, info_ptr);
+
+        //png_set_filler(png_ptr, 0, PNG_FILLER_AFTER);
+
+        for (unsigned int j = 0; j < this->data.size() / this->width; ++j) {
+            unsigned char *dataPtr = &this->data.at(j * this->width);
+            png_write_rows(png_ptr, &dataPtr, 1);
+        }
+
+        png_write_end(png_ptr, nullptr);
+
+        png_destroy_write_struct(&png_ptr, &info_ptr);
+
+        fclose(outfile);
+        return true;
     }
 
     switch(type) {
