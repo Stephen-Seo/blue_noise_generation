@@ -30,7 +30,7 @@ image::Bl blue_noise(int width, int height, int threads = 1, bool use_opencl = t
 namespace internal {
     std::vector<unsigned int> blue_noise_impl(int width, int height, int threads = 1);
     std::vector<unsigned int> blue_noise_cl_impl(
-        int width, int height, int filter_size,
+        const int width, const int height, const int filter_size,
         cl_context context, cl_device_id device, cl_program program);
 
     inline std::vector<bool> random_noise(int size, int subsize) {
@@ -69,13 +69,16 @@ namespace internal {
 
     inline std::vector<float> precompute_gaussian(int size) {
         std::vector<float> precomputed;
+        if (size % 2 == 0) {
+            ++size;
+        }
         precomputed.reserve(size * size);
 
         for(int i = 0; i < size * size; ++i) {
             auto xy = utility::oneToTwo(i, size);
             precomputed.push_back(gaussian(
-                (float)xy.first - (float)size / 2.0F + 0.5F,
-                (float)xy.second - (float)size / 2.0F + 0.5F));
+                xy.first - (size / 2),
+                xy.second - (size / 2)));
         }
 
         return precomputed;
@@ -230,6 +233,7 @@ namespace internal {
             }
         }
         if (count * 2 >= pbp.size()) {
+            //std::cout << "MINMAX flip\n"; // DEBUG
             for (unsigned int i = 0; i < pbp.size(); ++i) {
                 pbp[i] = !pbp[i];
             }

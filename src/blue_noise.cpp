@@ -10,6 +10,8 @@
 
 #include <CL/opencl.h>
 
+#include "image.hpp"
+
 #ifndef NDEBUG
 # include <cstdio>
 #endif
@@ -245,7 +247,7 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
 }
 
 std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
-        int width, int height, int filter_size, cl_context context, cl_device_id device, cl_program program) {
+        const int width, const int height, const int filter_size, cl_context context, cl_device_id device, cl_program program) {
     cl_int err;
     cl_kernel kernel;
     cl_command_queue queue;
@@ -262,10 +264,10 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
     queue = clCreateCommandQueueWithProperties(context, device, nullptr, &err);
 
     d_filter_out = clCreateBuffer(context, CL_MEM_WRITE_ONLY, count * sizeof(float), nullptr, nullptr);
-    d_precomputed = clCreateBuffer(context, CL_MEM_READ_ONLY, filter_size * filter_size * sizeof(float), nullptr, nullptr);
+    d_precomputed = clCreateBuffer(context, CL_MEM_READ_ONLY, precomputed.size() * sizeof(float), nullptr, nullptr);
     d_pbp = clCreateBuffer(context, CL_MEM_READ_ONLY, count * sizeof(int), nullptr, nullptr);
 
-    err = clEnqueueWriteBuffer(queue, d_precomputed, CL_TRUE, 0, filter_size * filter_size * sizeof(float), &precomputed[0], 0, nullptr, nullptr);
+    err = clEnqueueWriteBuffer(queue, d_precomputed, CL_TRUE, 0, precomputed.size() * sizeof(float), &precomputed[0], 0, nullptr, nullptr);
     if(err != CL_SUCCESS) {
         std::cerr << "OpenCL: Failed to write to d_precomputed buffer\n";
         clReleaseMemObject(d_pbp);
@@ -356,14 +358,27 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
         clReleaseCommandQueue(queue);
         return {};
     }
-    if(clSetKernelArg(kernel, 5, sizeof(int), &filter_size) != CL_SUCCESS) {
-        std::cerr << "OpenCL: Failed to set kernel arg 4\n";
-        clReleaseKernel(kernel);
-        clReleaseMemObject(d_pbp);
-        clReleaseMemObject(d_precomputed);
-        clReleaseMemObject(d_filter_out);
-        clReleaseCommandQueue(queue);
-        return {};
+    if (filter_size % 2 == 0) {
+        int filter_size_odd = filter_size + 1;
+        if(clSetKernelArg(kernel, 5, sizeof(int), &filter_size_odd) != CL_SUCCESS) {
+            std::cerr << "OpenCL: Failed to set kernel arg 4\n";
+            clReleaseKernel(kernel);
+            clReleaseMemObject(d_pbp);
+            clReleaseMemObject(d_precomputed);
+            clReleaseMemObject(d_filter_out);
+            clReleaseCommandQueue(queue);
+            return {};
+        }
+    } else {
+        if(clSetKernelArg(kernel, 5, sizeof(int), &filter_size) != CL_SUCCESS) {
+            std::cerr << "OpenCL: Failed to set kernel arg 4\n";
+            clReleaseKernel(kernel);
+            clReleaseMemObject(d_pbp);
+            clReleaseMemObject(d_precomputed);
+            clReleaseMemObject(d_filter_out);
+            clReleaseCommandQueue(queue);
+            return {};
+        }
     }
 
     if(clGetKernelWorkGroupInfo(kernel, device, CL_KERNEL_WORK_GROUP_SIZE, sizeof(std::size_t), &local_size, nullptr) != CL_SUCCESS) {
@@ -502,6 +517,8 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
         }
 
         if(iterations % 100 == 0) {
+            std::cout << "max was " << max << ", second_min is " << second_min
+                << std::endl;
             // generate blue_noise image from pbp
             FILE *blue_noise_image = fopen("blue_noise.pbm", "w");
             fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
@@ -539,7 +556,7 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
 
     std::cout << "Generating dither_array...\n";
     std::unordered_set<unsigned int> set;
-    std::vector<unsigned int> dither_array(count);
+    std::vector<unsigned int> dither_array(count, 0);
     int min, max;
     {
         std::vector<bool> pbp_copy(pbp);
@@ -557,6 +574,10 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
             }
         }
         pbp = pbp_copy;
+#ifndef NDEBUG
+        image::Bl min_pixels = internal::rangeToBl(dither_array, width);
+        min_pixels.writeToFile(image::file_type::PNG, true, "da_min_pixels.png");
+#endif
     }
     std::cout << "\nRanking remainder of first half of pixels...\n";
     for (unsigned int i = pixel_count; i < (unsigned int)((count + 1) / 2); ++i) {
@@ -573,6 +594,8 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
     }
 #ifndef NDEBUG
     {
+        image::Bl min_pixels = internal::rangeToBl(dither_array, width);
+        min_pixels.writeToFile(image::file_type::PNG, true, "da_mid_pixels.png");
         get_filter();
         internal::write_filter(filter, width, "filter_mid.pgm");
         image::Bl pbp_image = toBl(pbp, width);

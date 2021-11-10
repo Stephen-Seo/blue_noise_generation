@@ -22,10 +22,11 @@ __kernel void do_filter(
     if(i < 0 || i >= width * height) {
         return;
     }
+
     int x = i % width;
     int y = i / width;
 
-    float sum = 0.0f;
+    float sum = 0.0F;
     for(int q = 0; q < filter_size; ++q) {
         int q_prime = height - filter_size / 2 + y + q;
         for(int p = 0; p < filter_size; ++p) {
