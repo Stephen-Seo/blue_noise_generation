@@ -408,7 +408,9 @@ namespace internal {
             }
         }
 
+#ifndef NDEBUG
         std::cout << "rangeToBl: Got min == " << min << " and max == " << max << std::endl;
+#endif
 
         max -= min;
 

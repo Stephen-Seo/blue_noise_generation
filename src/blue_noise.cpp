@@ -141,12 +141,13 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
 #ifndef NDEBUG
     internal::write_filter(filter_out, width, "filter_out_start.pgm");
 #endif
+    std::cout << "Begin BinaryArray generation loop\n";
     while(true) {
-//#ifndef NDEBUG
+#ifndef NDEBUG
 //        if(++iterations % 10 == 0) {
             printf("Iteration %d\n", ++iterations);
 //        }
-//#endif
+#endif
         // get filter values
         internal::compute_filter(pbp, width, height, count, filter_size,
                 filter_out, precomputed.get(), threads);
@@ -221,7 +222,9 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
         std::vector<bool> pbp_copy(pbp);
         std::cout << "Ranking minority pixels...\n";
         for (unsigned int i = pixel_count; i-- > 0;) {
+#ifndef NDEBUG
             std::cout << i << ' ';
+#endif
             internal::compute_filter(pbp, width, height, count, filter_size,
                     filter_out, precomputed.get(), threads);
             std::tie(std::ignore, max) = internal::filter_minmax(filter_out, pbp);
@@ -232,7 +235,9 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
     }
     std::cout << "\nRanking remainder of first half of pixels...\n";
     for (unsigned int i = pixel_count; i < (unsigned int)((count + 1) / 2); ++i) {
+#ifndef NDEBUG
         std::cout << i << ' ';
+#endif
         internal::compute_filter(pbp, width, height, count, filter_size,
                 filter_out, precomputed.get(), threads);
         std::tie(min, std::ignore) = internal::filter_minmax(filter_out, pbp);
@@ -242,7 +247,9 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
     std::cout << "\nRanking last half of pixels...\n";
     std::vector<bool> reversed_pbp(pbp);
     for (unsigned int i = (count + 1) / 2; i < (unsigned int)count; ++i) {
+#ifndef NDEBUG
         std::cout << i << ' ';
+#endif
         for(unsigned int i = 0; i < pbp.size(); ++i) {
             reversed_pbp[i] = !pbp[i];
         }
@@ -476,9 +483,9 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
     };
 
     {
+#ifndef NDEBUG
         printf("Inserting %d pixels into image of max count %d\n", pixel_count, count);
         // generate image from randomized pbp
-#ifndef NDEBUG
         FILE *random_noise_image = fopen("random_noise.pbm", "w");
         fprintf(random_noise_image, "P1\n%d %d\n", width, height);
         for(int y = 0; y < height; ++y) {
@@ -507,8 +514,11 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
 
     int iterations = 0;
 
+    std::cout << "Begin BinaryArray generation loop\n";
     while(true) {
+#ifndef NDEBUG
         printf("Iteration %d\n", ++iterations);
+#endif
 
         if(!get_filter()) {
             std::cerr << "OpenCL: Failed to execute do_filter\n";
@@ -537,10 +547,10 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
         }
 
         if(iterations % 100 == 0) {
+#ifndef NDEBUG
             std::cout << "max was " << max << ", second_min is " << second_min
                 << std::endl;
             // generate blue_noise image from pbp
-#ifndef NDEBUG
             FILE *blue_noise_image = fopen("blue_noise.pbm", "w");
             fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
             for(int y = 0; y < height; ++y) {
@@ -579,23 +589,29 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
 #endif
 
     std::cout << "Generating dither_array...\n";
+#ifndef NDEBUG
     std::unordered_set<unsigned int> set;
+#endif
     std::vector<unsigned int> dither_array(count, 0);
     int min, max;
     {
         std::vector<bool> pbp_copy(pbp);
         std::cout << "Ranking minority pixels...\n";
         for (unsigned int i = pixel_count; i-- > 0;) {
+#ifndef NDEBUG
             std::cout << i << ' ';
+#endif
             get_filter();
             std::tie(std::ignore, max) = internal::filter_minmax(filter, pbp);
             pbp.at(max) = false;
             dither_array.at(max) = i;
+#ifndef NDEBUG
             if (set.find(max) != set.end()) {
                 std::cout << "\nWARNING: Reusing index " << max << '\n';
             } else {
                 set.insert(max);
             }
+#endif
         }
         pbp = pbp_copy;
 #ifndef NDEBUG
@@ -605,16 +621,20 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
     }
     std::cout << "\nRanking remainder of first half of pixels...\n";
     for (unsigned int i = pixel_count; i < (unsigned int)((count + 1) / 2); ++i) {
+#ifndef NDEBUG
         std::cout << i << ' ';
+#endif
         get_filter();
         std::tie(min, std::ignore) = internal::filter_minmax(filter, pbp);
         pbp.at(min) = true;
         dither_array.at(min) = i;
+#ifndef NDEBUG
         if (set.find(min) != set.end()) {
             std::cout << "\nWARNING: Reusing index " << min << '\n';
         } else {
             set.insert(min);
         }
+#endif
     }
 #ifndef NDEBUG
     {
@@ -629,16 +649,20 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
     std::cout << "\nRanking last half of pixels...\n";
     reversed_pbp = true;
     for (unsigned int i = (count + 1) / 2; i < (unsigned int)count; ++i) {
+#ifndef NDEBUG
         std::cout << i << ' ';
+#endif
         get_filter();
         std::tie(std::ignore, max) = internal::filter_minmax(filter, pbp);
         pbp.at(max) = true;
         dither_array.at(max) = i;
+#ifndef NDEBUG
         if (set.find(max) != set.end()) {
             std::cout << "\nWARNING: Reusing index " << max << '\n';
         } else {
             set.insert(max);
         }
+#endif
     }
     std::cout << std::endl;
 
