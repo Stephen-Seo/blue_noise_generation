@@ -397,10 +397,16 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
 
     std::vector<float> filter(count);
 
+    bool reversed_pbp = false;
+
     const auto get_filter = [&queue, &kernel, &global_size, &local_size,
-            &d_filter_out, &d_pbp, &pbp, &pbp_i, &count, &filter, &err] () -> bool {
+            &d_filter_out, &d_pbp, &pbp, &pbp_i, &count, &filter, &err, &reversed_pbp] () -> bool {
         for(unsigned int i = 0; i < pbp.size(); ++i) {
-            pbp_i[i] = pbp[i] ? 1 : 0;
+            if (reversed_pbp) {
+                pbp_i[i] = pbp[i] ? 0 : 1;
+            } else {
+                pbp_i[i] = pbp[i] ? 1 : 0;
+            }
         }
         if(clEnqueueWriteBuffer(queue, d_pbp, CL_TRUE, 0, count * sizeof(int), &pbp_i[0], 0, nullptr, nullptr) != CL_SUCCESS) {
             std::cerr << "OpenCL: Failed to write to d_pbp buffer\n";
@@ -603,6 +609,7 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
     }
 #endif
     std::cout << "\nRanking last half of pixels...\n";
+    reversed_pbp = true;
     for (unsigned int i = (count + 1) / 2; i < (unsigned int)count; ++i) {
         std::cout << i << ' ';
         get_filter();
