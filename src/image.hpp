@@ -34,9 +34,12 @@ namespace image {
 
         virtual void randomize() = 0;
 
-        virtual int getSize() = 0;
+        virtual unsigned int getSize() const = 0;
         virtual uint8_t* getData() = 0;
         virtual const uint8_t* getDataC() const = 0;
+
+        virtual unsigned int getWidth() const = 0;
+        virtual unsigned int getHeight() const = 0;
 
         virtual int getTypesCount() = 0;
         virtual std::vector<color_type> getTypes() = 0;
@@ -45,6 +48,7 @@ namespace image {
         virtual bool canWriteFile(file_type type) = 0;
         virtual bool writeToFile(file_type type, bool canOverwrite, const char *filename) = 0;
         virtual bool writeToFile(file_type type, bool canOverwrite, const std::string &filename) = 0;
+        bool isValid() const;
     };
 
     class Bl : public Base {
@@ -62,20 +66,22 @@ namespace image {
         Bl& operator=(const Bl &other) = default;
         Bl& operator=(Bl &&other) = default;
 
-        virtual void randomize() override;
+        void randomize() override;
 
-        virtual int getSize() override;
-        virtual uint8_t* getData() override;
-        virtual const uint8_t* getDataC() const override;
+        unsigned int getSize() const override;
+        uint8_t* getData() override;
+        const uint8_t* getDataC() const override;
 
-        virtual int getTypesCount() override { return 1; }
-        virtual std::vector<color_type> getTypes() override { return { color_type::Black }; }
-        virtual int getTypeStride(color_type) override { return 0; }
+        unsigned int getWidth() const override;
+        unsigned int getHeight() const override;
 
-        virtual bool canWriteFile(file_type type) override;
-        virtual bool writeToFile(file_type type, bool canOverwrite, const char *filename) override;
-        virtual bool writeToFile(file_type type, bool canOverwrite, const std::string &filename) override;
-        virtual bool isValid() const;
+        int getTypesCount() override { return 1; }
+        std::vector<color_type> getTypes() override { return { color_type::Black }; }
+        int getTypeStride(color_type) override { return 0; }
+
+        bool canWriteFile(file_type type) override;
+        bool writeToFile(file_type type, bool canOverwrite, const char *filename) override;
+        bool writeToFile(file_type type, bool canOverwrite, const std::string &filename) override;
     private:
         std::vector<uint8_t> data;
         int width;

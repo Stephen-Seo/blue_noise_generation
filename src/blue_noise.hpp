@@ -90,6 +90,10 @@ namespace internal {
             int width, int height, int filter_size) {
         float sum = 0.0f;
 
+        if (filter_size % 2 == 0) {
+            ++filter_size;
+        }
+
         // Should be range -M/2 to M/2, but size_t cannot be negative, so range
         // is 0 to M.
         // p' = (M + x - (p - M/2)) % M = (3M/2 + x - p) % M
@@ -99,8 +103,8 @@ namespace internal {
             for(int p = 0; p < filter_size; ++p) {
                 int p_prime = (width - filter_size / 2 + x + p) % width;
                 if(pbp[utility::twoToOne(p_prime, q_prime, width, height)]) {
-                    sum += gaussian((float)p - filter_size/2.0F + 0.5F,
-                                    (float)q - filter_size/2.0F + 0.5F);
+                    sum += gaussian(p - filter_size/2,
+                                    q - filter_size/2);
                 }
             }
         }
@@ -114,6 +118,10 @@ namespace internal {
             int width, int height, int filter_size,
             const std::vector<float> &precomputed) {
         float sum = 0.0f;
+
+        if (filter_size % 2 == 0) {
+            ++filter_size;
+        }
 
         for(int q = 0; q < filter_size; ++q) {
             int q_prime = (height - filter_size / 2 + y + q) % height;

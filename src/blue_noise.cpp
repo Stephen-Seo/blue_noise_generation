@@ -7,14 +7,12 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <cstdio>
 
 #include <CL/opencl.h>
 
 #include "image.hpp"
 
-#ifndef NDEBUG
-# include <cstdio>
-#endif
 
 image::Bl dither::blue_noise(int width, int height, int threads, bool use_opencl) {
 
@@ -93,6 +91,7 @@ image::Bl dither::blue_noise(int width, int height, int threads, bool use_opencl
             if(!result.empty()) {
                 return internal::rangeToBl(result, width);
             }
+            std::cout << "ERROR: Empty result\n";
         } while (false);
     }
 
@@ -102,6 +101,7 @@ image::Bl dither::blue_noise(int width, int height, int threads, bool use_opencl
         return internal::rangeToBl(internal::blue_noise_impl(width, height, threads), width);
     }
 
+    std::cout << "ERROR: Invalid state (end of blue_noise fn)\n";
     return {};
 }
 
@@ -114,7 +114,7 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
     std::vector<bool> pbp = random_noise(count, count * 4 / 10);
     pbp.resize(count);
 
-//#ifndef NDEBUG
+#ifndef NDEBUG
     printf("Inserting %d pixels into image of max count %d\n", pixel_count, count);
     // generate image from randomized pbp
     FILE *random_noise_image = fopen("random_noise.pbm", "w");
@@ -126,7 +126,7 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
         fputc('\n', random_noise_image);
     }
     fclose(random_noise_image);
-//#endif
+#endif
 
 //#ifndef NDEBUG
     int iterations = 0;
@@ -138,7 +138,9 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
 
     internal::compute_filter(pbp, width, height, count, filter_size,
             filter_out, precomputed.get(), threads);
+#ifndef NDEBUG
     internal::write_filter(filter_out, width, "filter_out_start.pgm");
+#endif
     while(true) {
 //#ifndef NDEBUG
 //        if(++iterations % 10 == 0) {
@@ -149,13 +151,13 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
         internal::compute_filter(pbp, width, height, count, filter_size,
                 filter_out, precomputed.get(), threads);
 
-#ifndef NDEBUG
+//#ifndef NDEBUG
 //        for(int i = 0; i < count; ++i) {
 //            int x, y;
 //            std::tie(x, y) = internal::oneToTwo(i, width);
 //            printf("%d (%d, %d): %f\n", i, x, y, filter_out[i]);
 //        }
-#endif
+//#endif
 
         int min, max;
         std::tie(min, max) = internal::filter_minmax(filter_out, pbp);
@@ -180,6 +182,7 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
 
         if(iterations % 100 == 0) {
             // generate blue_noise image from pbp
+#ifndef NDEBUG
             FILE *blue_noise_image = fopen("blue_noise.pbm", "w");
             fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
             for(int y = 0; y < height; ++y) {
@@ -189,13 +192,16 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
                 fputc('\n', blue_noise_image);
             }
             fclose(blue_noise_image);
+#endif
         }
     }
     internal::compute_filter(pbp, width, height, count, filter_size,
             filter_out, precomputed.get(), threads);
+#ifndef NDEBUG
     internal::write_filter(filter_out, width, "filter_out_final.pgm");
+#endif
 
-//#ifndef NDEBUG
+#ifndef NDEBUG
     // generate blue_noise image from pbp
     FILE *blue_noise_image = fopen("blue_noise.pbm", "w");
     fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
@@ -206,7 +212,7 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
         fputc('\n', blue_noise_image);
     }
     fclose(blue_noise_image);
-//#endif
+#endif
 
     std::cout << "Generating dither_array...\n";
     std::vector<unsigned int> dither_array(count);
@@ -234,9 +240,13 @@ std::vector<unsigned int> dither::internal::blue_noise_impl(int width, int heigh
         dither_array[min] = i;
     }
     std::cout << "\nRanking last half of pixels...\n";
+    std::vector<bool> reversed_pbp(pbp);
     for (unsigned int i = (count + 1) / 2; i < (unsigned int)count; ++i) {
         std::cout << i << ' ';
-        internal::compute_filter(pbp, width, height, count, filter_size,
+        for(unsigned int i = 0; i < pbp.size(); ++i) {
+            reversed_pbp[i] = !pbp[i];
+        }
+        internal::compute_filter(reversed_pbp, width, height, count, filter_size,
                 filter_out, precomputed.get(), threads);
         std::tie(std::ignore, max) = internal::filter_minmax(filter_out, pbp);
         pbp[max] = true;
@@ -468,6 +478,7 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
     {
         printf("Inserting %d pixels into image of max count %d\n", pixel_count, count);
         // generate image from randomized pbp
+#ifndef NDEBUG
         FILE *random_noise_image = fopen("random_noise.pbm", "w");
         fprintf(random_noise_image, "P1\n%d %d\n", width, height);
         for(int y = 0; y < height; ++y) {
@@ -477,6 +488,7 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
             fputc('\n', random_noise_image);
         }
         fclose(random_noise_image);
+#endif
     }
 
     if(!get_filter()) {
@@ -488,7 +500,9 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
         clReleaseCommandQueue(queue);
         return {};
     } else {
+#ifndef NDEBUG
         internal::write_filter(filter, width, "filter_out_start.pgm");
+#endif
     }
 
     int iterations = 0;
@@ -526,6 +540,7 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
             std::cout << "max was " << max << ", second_min is " << second_min
                 << std::endl;
             // generate blue_noise image from pbp
+#ifndef NDEBUG
             FILE *blue_noise_image = fopen("blue_noise.pbm", "w");
             fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
             for(int y = 0; y < height; ++y) {
@@ -535,12 +550,14 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
                 fputc('\n', blue_noise_image);
             }
             fclose(blue_noise_image);
+#endif
         }
     }
 
     if(!get_filter()) {
         std::cerr << "OpenCL: Failed to execute do_filter (at end)\n";
     } else {
+#ifndef NDEBUG
         internal::write_filter(filter, width, "filter_out_final.pgm");
         FILE *blue_noise_image = fopen("blue_noise.pbm", "w");
         fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
@@ -551,6 +568,7 @@ std::vector<unsigned int> dither::internal::blue_noise_cl_impl(
             fputc('\n', blue_noise_image);
         }
         fclose(blue_noise_image);
+#endif
     }
 
 #ifndef NDEBUG

@@ -6,6 +6,10 @@
 
 #include <png.h>
 
+bool image::Base::isValid() const {
+    return getWidth() > 0 && getHeight() > 0 && getSize() > 0;
+}
+
 image::Bl::Bl() :
 data(),
 width(0),
@@ -60,7 +64,7 @@ void image::Bl::randomize() {
     }
 }
 
-int image::Bl::getSize() {
+unsigned int image::Bl::getSize() const {
     return data.size();
 }
 
@@ -78,8 +82,17 @@ const uint8_t* image::Bl::getDataC() const {
     return &data[0];
 }
 
+unsigned int image::Bl::getWidth() const {
+    return width;
+}
+
+unsigned int image::Bl::getHeight() const {
+    return height;
+}
+
 bool image::Bl::canWriteFile(file_type type) {
     if(!isValid()) {
+        std::cout << "Cannot write image because isValid() is false\n";
         return false;
     }
     switch(type) {
@@ -89,18 +102,22 @@ bool image::Bl::canWriteFile(file_type type) {
     case file_type::PNG:
         return true;
     default:
+        std::cout << "Cannot write image because received invalid file_type\n";
         return false;
     }
 }
 
 bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filename) {
     if(!isValid() || !canWriteFile(type)) {
+        std::cout << "ERROR: Image is not valid or cannot write file type\n";
         return false;
     }
 
     FILE *file = fopen(filename, "r");
     if(file && !canOverwrite) {
         fclose(file);
+        std::cout << "ERROR: Will not overwite existing file \"" << filename
+                  << "\"" << std::endl;
         return false;
     }
 
@@ -111,6 +128,7 @@ bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filen
     if(type == file_type::PNG) {
         FILE *outfile = fopen(filename, "wb");
         if (outfile == nullptr) {
+            std::cout << "ERROR: Failed to open file for writing (png)\n";
             return false;
         }
         const static auto pngErrorLFn = [] (png_structp /* unused */,
@@ -129,6 +147,7 @@ bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filen
 
         if (png_ptr == nullptr) {
             fclose(outfile);
+            std::cout << "ERROR: Failed to set up writing png file (png_ptr)\n";
             return false;
         }
 
@@ -136,12 +155,14 @@ bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filen
         if (info_ptr == nullptr) {
             png_destroy_write_struct(&png_ptr, nullptr);
             fclose(outfile);
+            std::cout << "ERROR: Failed to set up writing png file (png_infop)\n";
             return false;
         }
 
         if (setjmp(png_jmpbuf(png_ptr))) {
             png_destroy_write_struct(&png_ptr, &info_ptr);
             fclose(outfile);
+            std::cout << "ERROR: Failed to write image file (png error)\n";
             return false;
         }
 
@@ -183,6 +204,7 @@ bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filen
         break;
     default:
         fclose(file);
+        std::cout << "ERROR: Cannot write image file, invalid type\n";
         return false;
     }
     for(unsigned int i = 0; i < data.size(); ++i) {
@@ -205,6 +227,7 @@ bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filen
             break;
         default:
             fclose(file);
+            std::cout << "ERROR: Cannot write image file, invalid type\n";
             return false;
         }
     }
@@ -215,8 +238,4 @@ bool image::Bl::writeToFile(file_type type, bool canOverwrite, const char *filen
 
 bool image::Bl::writeToFile(file_type type, bool canOverwrite, const std::string &filename) {
     return writeToFile(type, canOverwrite, filename.c_str());
-}
-
-bool image::Bl::isValid() const {
-    return width > 0 && height > 0 && data.size() > 0;
 }
