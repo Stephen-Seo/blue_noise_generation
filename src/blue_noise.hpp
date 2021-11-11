@@ -15,6 +15,7 @@
 #include <cassert>
 #include <stdexcept>
 #include <iostream>
+#include <cmath>
 
 #include <sys/sysinfo.h>
 
@@ -419,7 +420,7 @@ namespace internal {
                 && "New image::Bl size too small (values' size is not a multiple of width)");
 
         for(unsigned int i = 0; i < values.size(); ++i) {
-            grImage.getData()[i] = ((float)((int)(values[i]) - min) / (float)max) * 255.0F;
+            grImage.getData()[i] = std::round(((float)((int)(values[i]) - min) / (float)max) * 255.0F);
         }
 
         return grImage;
