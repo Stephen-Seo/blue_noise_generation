@@ -18,16 +18,35 @@ if(NOT DEFINED CMAKE_BUILD_TYPE OR NOT CMAKE_BUILD_TYPE)
 endif()
 
 find_package(Threads REQUIRED)
-find_package(OpenCL REQUIRED)
+if(NOT DEFINED DISABLE_OPENCL)
+    find_package(OpenCL QUIET)
+    if(NOT DEFINED OpenCL_FOUND)
+        set(DISABLE_OPENCL True)
+        message(WARNING "OpenCL not found, OpenCL usage is disabled.")
+    endif()
+endif()
 find_package(PNG REQUIRED)
 
 add_executable(Dithering ${Dithering_SOURCES})
 target_compile_features(Dithering PUBLIC cxx_std_17)
-target_include_directories(Dithering PUBLIC
-    Threads::Threads
-    ${OpenCL_INCLUDE_DIRS}
-    ${PNG_INCLUDE_DIRS})
-target_link_libraries(Dithering PUBLIC 
-    Threads::Threads
-    ${OpenCL_LIBRARIES}
-    ${PNG_LIBRARIES})
+if(DEFINED DISABLE_OPENCL AND DISABLE_OPENCL)
+    message(STATUS "OpenCL usage is disabled.")
+    target_include_directories(Dithering PUBLIC
+        Threads::Threads
+        ${PNG_INCLUDE_DIRS})
+    target_link_libraries(Dithering PUBLIC
+        Threads::Threads
+        ${PNG_LIBRARIES})
+    target_compile_definitions(Dithering PRIVATE DITHERING_OPENCL_ENABLED=0)
+else()
+    message(STATUS "OpenCL usage is enabled.")
+    target_include_directories(Dithering PUBLIC
+        Threads::Threads
+        ${OpenCL_INCLUDE_DIRS}
+        ${PNG_INCLUDE_DIRS})
+    target_link_libraries(Dithering PUBLIC
+        Threads::Threads
+        ${OpenCL_LIBRARIES}
+        ${PNG_LIBRARIES})
+    target_compile_definitions(Dithering PRIVATE DITHERING_OPENCL_ENABLED=1)
+endif()
