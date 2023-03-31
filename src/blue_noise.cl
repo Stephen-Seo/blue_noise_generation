@@ -1,4 +1,4 @@
-int twoToOne(x, y, width, height) {
+int twoToOne(int x, int y, int width, int height) {
     while(x < 0) {
         x += width;
     }
