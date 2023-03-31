@@ -47,6 +47,10 @@ image::Bl dither::blue_noise(int width, int height, int threads, bool use_opencl
             {
                 char buf[1024];
                 std::ifstream program_file("src/blue_noise.cl");
+                if (!program_file.good()) {
+                    std::cerr << "ERROR: Failed to read \"src/blue_noise.cl\" (not found?)\n";
+                    break;
+                }
                 std::string program_string;
                 while(program_file.good()) {
                     program_file.read(buf, 1024);
