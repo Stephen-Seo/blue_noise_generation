@@ -12,17 +12,21 @@ Args::Args()
       output_filename_("output.png") {}
 
 void Args::DisplayHelp() {
-  std::cout
-      << "[-h | --help] [-b <size> | --blue-noise <size>] [--usecl | "
-         "--nousecl]\n"
-         "  -h | --help\t\t\t\tDisplay this help text\n"
-         "  -b <size> | --blue-noise <size>\tGenerate blue noise square with "
-         "size\n"
-         "  --usecl | --nousecl\t\t\tUse/Disable OpenCL (enabled by default)\n"
-         "  -t <int> | --threads <int>\t\tUse CPU thread count when not using "
-         "OpenCL\n"
-         "  -o <filelname> | --output <filename>\tOutput filename to use\n"
-         "  --overwrite\t\t\t\tEnable overwriting of file (default disabled)\n";
+  std::cout << "[-h | --help] [-b <size> | --blue-noise <size>] [--usecl | "
+               "--nousecl]\n"
+               "  -h | --help\t\t\t\tDisplay this help text\n"
+               "  -b <size> | --blue-noise <size>\tGenerate blue noise "
+               "square with "
+               "size\n"
+               "  --usecl | --nousecl\t\t\tUse/Disable OpenCL (enabled by "
+               "default)\n"
+               "  -t <int> | --threads <int>\t\tUse CPU thread count when "
+               "not using "
+               "OpenCL\n"
+               "  -o <filelname> | --output <filename>\tOutput filename to "
+               "use\n"
+               "  --overwrite\t\t\t\tEnable overwriting of file (default "
+               "disabled)\n";
 }
 
 bool Args::ParseArgs(int argc, char **argv) {
@@ -53,7 +57,8 @@ bool Args::ParseArgs(int argc, char **argv) {
                             std::strcmp(argv[0], "--threads") == 0)) {
       threads_ = std::strtoul(argv[1], nullptr, 10);
       if (threads_ == 0) {
-        std::cout << "ERROR: Failed to parse thread count, using 4 by default"
+        std::cout << "ERROR: Failed to parse thread count, using 4 by "
+                     "default"
                   << std::endl;
         threads_ = 4;
       }

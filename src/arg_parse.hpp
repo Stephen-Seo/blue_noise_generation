@@ -4,19 +4,19 @@
 #include <string>
 
 struct Args {
-    Args();
+  Args();
 
-    static void DisplayHelp();
+  static void DisplayHelp();
 
-    /// Returns true if help was printed
-    bool ParseArgs(int argc, char **argv);
+  /// Returns true if help was printed
+  bool ParseArgs(int argc, char **argv);
 
-    bool generate_blue_noise_;
-    bool use_opencl_;
-    bool overwrite_file_;
-    unsigned int blue_noise_size_;
-    unsigned int threads_;
-    std::string output_filename_;
+  bool generate_blue_noise_;
+  bool use_opencl_;
+  bool overwrite_file_;
+  unsigned int blue_noise_size_;
+  unsigned int threads_;
+  std::string output_filename_;
 };
 
 #endif
