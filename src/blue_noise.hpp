@@ -1,7 +1,9 @@
 #ifndef BLUE_NOISE_HPP
 #define BLUE_NOISE_HPP
 
+#if DITHERING_OPENCL_ENABLED == 1
 #include <CL/opencl.h>
+#endif
 #include <sys/sysinfo.h>
 
 #include <cassert>
@@ -31,11 +33,13 @@ image::Bl blue_noise(int width, int height, int threads = 1,
 namespace internal {
 std::vector<unsigned int> blue_noise_impl(int width, int height,
                                           int threads = 1);
+#if DITHERING_OPENCL_ENABLED == 1
 std::vector<unsigned int> blue_noise_cl_impl(const int width, const int height,
                                              const int filter_size,
                                              cl_context context,
                                              cl_device_id device,
                                              cl_program program);
+#endif
 
 inline std::vector<bool> random_noise(int size, int subsize) {
   std::vector<bool> pbp(size);
