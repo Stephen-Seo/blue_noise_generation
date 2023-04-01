@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.9)
-project(Dithering)
+project(blueNoiseGen)
 
-set(Dithering_SOURCES
+set(blueNoiseGen_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/blue_noise.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/image.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
@@ -29,26 +29,26 @@ else()
 endif()
 find_package(PNG REQUIRED)
 
-add_executable(Dithering ${Dithering_SOURCES})
-target_compile_features(Dithering PUBLIC cxx_std_17)
+add_executable(blueNoiseGen ${blueNoiseGen_SOURCES})
+target_compile_features(blueNoiseGen PUBLIC cxx_std_17)
 if(DEFINED DISABLE_OPENCL AND DISABLE_OPENCL)
     message(STATUS "OpenCL usage is disabled.")
-    target_include_directories(Dithering PUBLIC
+    target_include_directories(blueNoiseGen PUBLIC
         Threads::Threads
         ${PNG_INCLUDE_DIRS})
-    target_link_libraries(Dithering PUBLIC
+    target_link_libraries(blueNoiseGen PUBLIC
         Threads::Threads
         ${PNG_LIBRARIES})
-    target_compile_definitions(Dithering PRIVATE DITHERING_OPENCL_ENABLED=0)
+    target_compile_definitions(blueNoiseGen PRIVATE DITHERING_OPENCL_ENABLED=0)
 else()
     message(STATUS "OpenCL usage is enabled.")
-    target_include_directories(Dithering PUBLIC
+    target_include_directories(blueNoiseGen PUBLIC
         Threads::Threads
         ${OpenCL_INCLUDE_DIRS}
         ${PNG_INCLUDE_DIRS})
-    target_link_libraries(Dithering PUBLIC
+    target_link_libraries(blueNoiseGen PUBLIC
         Threads::Threads
         ${OpenCL_LIBRARIES}
         ${PNG_LIBRARIES})
-    target_compile_definitions(Dithering PRIVATE DITHERING_OPENCL_ENABLED=1)
+    target_compile_definitions(blueNoiseGen PRIVATE DITHERING_OPENCL_ENABLED=1)
 endif()
