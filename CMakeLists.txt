@@ -8,9 +8,11 @@ set(blueNoiseGen_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/arg_parse.cpp
 )
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g")
+add_compile_options(
+    -Wall -Wextra -Wpedantic
+    $<$<COMPILE_LANGUAGE:CXX>:-Weffc++>
+    $<$<CONFIG:DEBUG>:-O0>
+)
 
 if(NOT DEFINED CMAKE_BUILD_TYPE OR NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
@@ -31,6 +33,7 @@ find_package(PNG REQUIRED)
 
 add_executable(blueNoiseGen ${blueNoiseGen_SOURCES})
 target_compile_features(blueNoiseGen PUBLIC cxx_std_17)
+target_compile_definitions(blueNoiseGen PRIVATE CL_TARGET_OPENCL_VERSION=300)
 if(DEFINED DISABLE_OPENCL AND DISABLE_OPENCL)
     message(STATUS "OpenCL usage is disabled.")
     target_include_directories(blueNoiseGen PUBLIC
