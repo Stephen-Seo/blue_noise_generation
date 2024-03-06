@@ -14,6 +14,7 @@ struct Args {
   bool generate_blue_noise_;
   bool use_opencl_;
   bool overwrite_file_;
+  bool use_vulkan_;
   unsigned int blue_noise_size_;
   unsigned int threads_;
   std::string output_filename_;

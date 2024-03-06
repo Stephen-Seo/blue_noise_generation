@@ -28,7 +28,7 @@
 namespace dither {
 
 image::Bl blue_noise(int width, int height, int threads = 1,
-                     bool use_opencl = true);
+                     bool use_opencl = true, bool use_vulkan = true);
 
 namespace internal {
 std::vector<unsigned int> blue_noise_impl(int width, int height,

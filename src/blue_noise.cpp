@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -13,11 +14,153 @@
 #include <CL/opencl.h>
 #endif
 
+#if DITHERING_VULKAN_ENABLED == 1
+#include <vulkan/vulkan.h>
+
+static std::vector<const char *> VK_EXTENSIONS = {};
+
+#if VULKAN_VALIDATION == 1
+const std::vector<const char *> VALIDATION_LAYERS = {
+    "VK_LAYER_KHRONOS_validation"};
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL fn_VULKAN_DEBUG_CALLBACK(
+    VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT,
+    const VkDebugUtilsMessengerCallbackDataEXT *p_callback_data, void *) {
+  std::cerr << "Validation layer: " << p_callback_data->pMessage << std::endl;
+
+  return VK_FALSE;
+}
+#endif  // VULKAN_VALIDATION == 1
+#endif  // DITHERING_VULKAN_ENABLED == 1
+
 #include "image.hpp"
 
 image::Bl dither::blue_noise(int width, int height, int threads,
-                             bool use_opencl) {
+                             bool use_opencl, bool use_vulkan) {
   bool using_opencl = false;
+  bool using_vulkan = false;
+
+#if DITHERING_VULKAN_ENABLED == 1
+  if (use_vulkan) {
+    // Try to use Vulkan.
+#if VULKAN_VALIDATION == 1
+    // Check for validation support.
+    uint32_t layer_count;
+    vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
+
+    std::vector<VkLayerProperties> available_layers(layer_count);
+    vkEnumerateInstanceLayerProperties(&layer_count, available_layers.data());
+
+    bool validation_supported = true;
+
+    for (const char *layer_name : VALIDATION_LAYERS) {
+      bool layer_found = false;
+
+      for (const auto &layer_props : available_layers) {
+        if (std::strcmp(layer_name, layer_props.layerName) == 0) {
+          layer_found = true;
+          break;
+        }
+      }
+
+      if (!layer_found) {
+        validation_supported = false;
+        break;
+      }
+    }
+
+    if (!validation_supported) {
+      std::clog << "WARNING: Validation requested but not supported, cannot "
+                   "use Vulkan!\n";
+      goto ENDOF_VULKAN;
+    }
+
+    VK_EXTENSIONS.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#endif  // VULKAN_VALIDATION == 1
+
+    VkApplicationInfo app_info{};
+    app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    app_info.pApplicationName = "Blue Noise Generation";
+    app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    app_info.pEngineName = "No Engine";
+    app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    app_info.apiVersion = VK_API_VERSION_1_0;
+
+    VkInstanceCreateInfo create_info{};
+    create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    create_info.pApplicationInfo = &app_info;
+
+    create_info.enabledExtensionCount = VK_EXTENSIONS.size();
+    create_info.ppEnabledExtensionNames = VK_EXTENSIONS.data();
+
+    VkDebugUtilsMessengerCreateInfoEXT debug_create_info{};
+#if VULKAN_VALIDATION == 1
+    create_info.enabledLayerCount = VALIDATION_LAYERS.size();
+    create_info.ppEnabledLayerNames = VALIDATION_LAYERS.data();
+
+    const auto populate_debug_info =
+        [](VkDebugUtilsMessengerCreateInfoEXT *info) {
+          info->sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+          info->messageSeverity =
+              VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+              VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+              VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+          info->messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                              VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                              VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+          info->pfnUserCallback = fn_VULKAN_DEBUG_CALLBACK;
+        };
+
+    populate_debug_info(&debug_create_info);
+
+    create_info.pNext = &debug_create_info;
+
+    create_info.enabledExtensionCount = 1;
+#else
+    create_info.enabledLayerCount = 0;
+    create_info.pNext = nullptr;
+#endif  // VULKAN_VALIDATION == 1
+
+    VkInstance instance;
+    if (vkCreateInstance(&create_info, nullptr, &instance) != VK_SUCCESS) {
+      std::clog << "WARNING: Failed to create Vulkan instance!\n";
+      goto ENDOF_VULKAN;
+    }
+    utility::Cleanup cleanup_vk_instance(
+        [](void *ptr) { vkDestroyInstance(*((VkInstance *)ptr), nullptr); },
+        &instance);
+
+#if VULKAN_VALIDATION == 1
+    populate_debug_info(&debug_create_info);
+    VkDebugUtilsMessengerEXT debug_messenger;
+
+    auto create_debug_utils_messenger_func =
+        (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
+            instance, "vkCreateDebugUtilsMessengerEXT");
+    if (create_debug_utils_messenger_func != nullptr &&
+        create_debug_utils_messenger_func(instance, &debug_create_info, nullptr,
+                                          &debug_messenger) != VK_SUCCESS) {
+      std::clog << "WARNING: Failed to set up Vulkan debug messenger!\n";
+      goto ENDOF_VULKAN;
+    }
+    utility::Cleanup cleanup_debug_messenger(
+        [instance](void *ptr) {
+          auto func =
+              (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
+                  instance, "vkDestroyDebugUtilsMessengerEXT");
+          if (func != nullptr) {
+            func(instance, *((VkDebugUtilsMessengerEXT *)ptr), nullptr);
+          }
+        },
+        &debug_messenger);
+#endif  // VULKAN_VALIDATION == 1
+  }
+ENDOF_VULKAN:
+  std::clog << "TODO: Remove this once Vulkan support is implemented.\n";
+  return {};
+#else
+  std::clog << "WARNING: Not compiled with Vulkan support!\n";
+#endif  // DITHERING_VULKAN_ENABLED == 1
 
 #if DITHERING_OPENCL_ENABLED == 1
   if (use_opencl) {

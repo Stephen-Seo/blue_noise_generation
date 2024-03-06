@@ -6,6 +6,7 @@ set(blueNoiseGen_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/image.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/arg_parse.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/utility.cpp
 )
 
 add_compile_options(
@@ -29,29 +30,48 @@ if(NOT DEFINED DISABLE_OPENCL OR NOT DISABLE_OPENCL)
 else()
     message(STATUS "Not checking for OpenCL")
 endif()
+if(NOT DEFINED DISABLE_VULKAN OR NOT DISABLE_VULKAN)
+    find_package(Vulkan)
+    if(NOT DEFINED Vulkan_FOUND)
+        set(DISABLE_VULKAN True)
+        message(WARNING "Vulkan not found, Vulkan usage is disabled.")
+    endif()
+else()
+    message(STATUS "Not checking for Vulkan")
+endif()
 find_package(PNG REQUIRED)
 
 add_executable(blueNoiseGen ${blueNoiseGen_SOURCES})
 target_compile_features(blueNoiseGen PUBLIC cxx_std_17)
 target_compile_definitions(blueNoiseGen PRIVATE CL_TARGET_OPENCL_VERSION=300)
+target_include_directories(blueNoiseGen PUBLIC Threads::Threads ${PNG_INCLUDE_DIRS})
+target_link_libraries(blueNoiseGen PUBLIC Threads::Threads ${PNG_LIBRARIES})
+
 if(DEFINED DISABLE_OPENCL AND DISABLE_OPENCL)
     message(STATUS "OpenCL usage is disabled.")
-    target_include_directories(blueNoiseGen PUBLIC
-        Threads::Threads
-        ${PNG_INCLUDE_DIRS})
-    target_link_libraries(blueNoiseGen PUBLIC
-        Threads::Threads
-        ${PNG_LIBRARIES})
     target_compile_definitions(blueNoiseGen PRIVATE DITHERING_OPENCL_ENABLED=0)
 else()
     message(STATUS "OpenCL usage is enabled.")
     target_include_directories(blueNoiseGen PUBLIC
-        Threads::Threads
-        ${OpenCL_INCLUDE_DIRS}
-        ${PNG_INCLUDE_DIRS})
+        ${OpenCL_INCLUDE_DIRS})
     target_link_libraries(blueNoiseGen PUBLIC
-        Threads::Threads
-        ${OpenCL_LIBRARIES}
-        ${PNG_LIBRARIES})
+        ${OpenCL_LIBRARIES})
     target_compile_definitions(blueNoiseGen PRIVATE DITHERING_OPENCL_ENABLED=1)
+endif()
+
+if(DEFINED DISABLE_VULKAN AND DISABLE_VULKAN)
+    message(STATUS "Vulkan usage is disabled.")
+    target_compile_definitions(blueNoiseGen PRIVATE DITHERING_VULKAN_ENABLED=0)
+else()
+    message(STATUS "Vulkan usage is enabled.")
+    target_include_directories(blueNoiseGen PUBLIC
+        ${Vulkan_INCLUDE_DIRS})
+    target_link_libraries(blueNoiseGen PUBLIC
+        ${Vulkan_LIBRARIES})
+    target_compile_definitions(blueNoiseGen PRIVATE DITHERING_VULKAN_ENABLED=1)
+    if(CMAKE_BUILD_TYPE MATCHES "Debug")
+      target_compile_definitions(blueNoiseGen PRIVATE VULKAN_VALIDATION=1)
+    else()
+      target_compile_definitions(blueNoiseGen PRIVATE VULKAN_VALIDATION=0)
+    endif()
 endif()

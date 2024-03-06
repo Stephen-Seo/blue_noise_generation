@@ -2,6 +2,7 @@
 #define DITHERING_UTILITY_HPP
 
 #include <cmath>
+#include <functional>
 #include <utility>
 
 namespace utility {
@@ -28,6 +29,24 @@ inline float dist(int a, int b, int width) {
   float dy = axy.second - bxy.second;
   return std::sqrt(dx * dx + dy * dy);
 }
+
+class Cleanup {
+ public:
+  Cleanup(std::function<void(void *)> fn, void *ptr);
+  ~Cleanup();
+
+  // allow move
+  Cleanup(Cleanup &&) = default;
+  Cleanup &operator=(Cleanup &&) = default;
+
+  // deny copy
+  Cleanup(const Cleanup &) = delete;
+  Cleanup &operator=(const Cleanup &) = delete;
+
+ private:
+  std::function<void(void *)> fn;
+  void *ptr;
+};
 }  // namespace utility
 
 #endif

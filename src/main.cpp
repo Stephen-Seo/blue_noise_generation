@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
     std::cout << "Generating blue_noise..." << std::endl;
     image::Bl bl =
         dither::blue_noise(args.blue_noise_size_, args.blue_noise_size_,
-                           args.threads_, args.use_opencl_);
+                           args.threads_, args.use_opencl_, args.use_vulkan_);
     if (!bl.writeToFile(image::file_type::PNG, args.overwrite_file_,
                         args.output_filename_)) {
       std::cout << "ERROR: Failed to write blue-noise to file\n";

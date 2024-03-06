@@ -7,6 +7,7 @@ Args::Args()
     : generate_blue_noise_(false),
       use_opencl_(true),
       overwrite_file_(false),
+      use_vulkan_(true),
       blue_noise_size_(32),
       threads_(4),
       output_filename_("output.png") {}
@@ -26,7 +27,9 @@ void Args::DisplayHelp() {
                "  -o <filelname> | --output <filename>\tOutput filename to "
                "use\n"
                "  --overwrite\t\t\t\tEnable overwriting of file (default "
-               "disabled)\n";
+               "disabled)\n"
+               "  --usevulkan | --nousevulkan\t\t\tUse/Disable Vulkan (enabled "
+               "by default)\n";
 }
 
 bool Args::ParseArgs(int argc, char **argv) {
@@ -69,6 +72,10 @@ bool Args::ParseArgs(int argc, char **argv) {
       output_filename_ = std::string(argv[1]);
       --argc;
       ++argv;
+    } else if (std::strcmp(argv[0], "--usevulkan") == 0) {
+      use_vulkan_ = true;
+    } else if (std::strcmp(argv[0], "--nousevulkan") == 0) {
+      use_vulkan_ = false;
     } else {
       std::cout << "WARNING: Ignoring invalid input \"" << argv[0] << "\""
                 << std::endl;
