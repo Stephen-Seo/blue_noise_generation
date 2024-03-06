@@ -114,8 +114,6 @@ image::Bl dither::blue_noise(int width, int height, int threads,
     populate_debug_info(&debug_create_info);
 
     create_info.pNext = &debug_create_info;
-
-    create_info.enabledExtensionCount = 1;
 #else
     create_info.enabledLayerCount = 0;
     create_info.pNext = nullptr;
