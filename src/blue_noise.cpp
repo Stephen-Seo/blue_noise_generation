@@ -21,7 +21,7 @@
 static std::vector<const char *> VK_EXTENSIONS = {};
 
 #if VULKAN_VALIDATION == 1
-const std::vector<const char *> VALIDATION_LAYERS = {
+const std::array<const char *, 1> VALIDATION_LAYERS = {
     "VK_LAYER_KHRONOS_validation"};
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL fn_VULKAN_DEBUG_CALLBACK(
