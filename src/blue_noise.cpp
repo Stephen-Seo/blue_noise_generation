@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <random>
 #include <string>
 #include <unordered_set>
@@ -31,6 +32,37 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL fn_VULKAN_DEBUG_CALLBACK(
   return VK_FALSE;
 }
 #endif  // VULKAN_VALIDATION == 1
+
+struct QueueFamilyIndices {
+  QueueFamilyIndices() : computeFamily() {}
+
+  std::optional<uint32_t> computeFamily;
+
+  bool isComplete() { return computeFamily.has_value(); }
+};
+
+QueueFamilyIndices find_queue_families(VkPhysicalDevice device) {
+  QueueFamilyIndices indices;
+  uint32_t queue_family_count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count,
+                                           nullptr);
+  std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count,
+                                           queue_families.data());
+
+  for (uint32_t qf_idx = 0; qf_idx < queue_family_count; ++qf_idx) {
+    if (queue_families[qf_idx].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+      indices.computeFamily = qf_idx;
+    }
+
+    if (indices.isComplete()) {
+      break;
+    }
+  }
+
+  return indices;
+}
+
 #endif  // DITHERING_VULKAN_ENABLED == 1
 
 #include "image.hpp"
@@ -152,6 +184,44 @@ image::Bl dither::blue_noise(int width, int height, int threads,
         },
         &debug_messenger);
 #endif  // VULKAN_VALIDATION == 1
+    uint32_t device_count = 0;
+    vkEnumeratePhysicalDevices(instance, &device_count, nullptr);
+    if (device_count == 0) {
+      std::clog << "WARNING: No GPUs available with Vulkan support!\n";
+      goto ENDOF_VULKAN;
+    }
+    std::vector<VkPhysicalDevice> devices(device_count);
+    vkEnumeratePhysicalDevices(instance, &device_count, devices.data());
+
+    std::optional<VkPhysicalDevice> gpu_dev_discrete;
+    std::optional<VkPhysicalDevice> gpu_dev_integrated;
+    for (const auto &device : devices) {
+      auto indices = find_queue_families(device);
+
+      VkPhysicalDeviceProperties dev_props{};
+      vkGetPhysicalDeviceProperties(device, &dev_props);
+
+      if (indices.isComplete()) {
+        if (dev_props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+          gpu_dev_discrete = device;
+        } else if (dev_props.deviceType ==
+                   VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+          gpu_dev_integrated = device;
+        }
+      }
+    }
+
+    VkPhysicalDevice phys_device;
+    if (gpu_dev_discrete.has_value()) {
+      std::clog << "NOTICE: Found discrete GPU supporting Vulkan compute.\n";
+      phys_device = gpu_dev_discrete.value();
+    } else if (gpu_dev_integrated.has_value()) {
+      std::clog << "NOTICE: Found integrated GPU supporting Vulkan compute.\n";
+      phys_device = gpu_dev_integrated.value();
+    } else {
+      std::clog << "WARNING: No suitable GPUs found!\n";
+      goto ENDOF_VULKAN;
+    }
   }
 ENDOF_VULKAN:
   std::clog << "TODO: Remove this once Vulkan support is implemented.\n";
