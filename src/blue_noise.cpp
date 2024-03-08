@@ -222,6 +222,50 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       std::clog << "WARNING: No suitable GPUs found!\n";
       goto ENDOF_VULKAN;
     }
+
+    auto indices = find_queue_families(phys_device);
+    std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
+    std::unordered_set<uint32_t> unique_queue_families = {
+        indices.computeFamily.value()};
+
+    float queue_priority = 1.0F;
+    for (uint32_t queue_family : unique_queue_families) {
+      VkDeviceQueueCreateInfo queue_create_info{};
+      queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+      queue_create_info.queueFamilyIndex = queue_family;
+      queue_create_info.queueCount = 1;
+      queue_create_info.pQueuePriorities = &queue_priority;
+      queue_create_infos.push_back(queue_create_info);
+    }
+
+    VkPhysicalDeviceFeatures device_features{};
+
+    VkDeviceCreateInfo dev_create_info{};
+    dev_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+
+    dev_create_info.queueCreateInfoCount = queue_create_infos.size();
+    dev_create_info.pQueueCreateInfos = queue_create_infos.data();
+
+    dev_create_info.pEnabledFeatures = &device_features;
+
+    dev_create_info.enabledExtensionCount = 0;
+
+#if VULKAN_VALIDATION == 1
+    dev_create_info.enabledLayerCount = VALIDATION_LAYERS.size();
+    dev_create_info.ppEnabledLayerNames = VALIDATION_LAYERS.data();
+#else
+    dev_create_info.enabledLayerCount = 0;
+#endif
+
+    VkDevice device;
+    if (vkCreateDevice(phys_device, &dev_create_info, nullptr, &device) !=
+        VK_SUCCESS) {
+      std::clog << "WARNING: Failed to create VkDevice!\n";
+      goto ENDOF_VULKAN;
+    }
+    utility::Cleanup device_cleanup(
+        [](void *ptr) { vkDestroyDevice(*((VkDevice *)ptr), nullptr); },
+        &device);
   }
 ENDOF_VULKAN:
   std::clog << "TODO: Remove this once Vulkan support is implemented.\n";
