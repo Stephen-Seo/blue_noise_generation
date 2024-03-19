@@ -24,7 +24,7 @@ void Args::DisplayHelp() {
                "  -t <int> | --threads <int>\t\tUse CPU thread count when "
                "not using "
                "OpenCL\n"
-               "  -o <filelname> | --output <filename>\tOutput filename to "
+               "  -o <filename> | --output <filename>\tOutput filename to "
                "use\n"
                "  --overwrite\t\t\t\tEnable overwriting of file (default "
                "disabled)\n"
