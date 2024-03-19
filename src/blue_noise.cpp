@@ -266,6 +266,56 @@ image::Bl dither::blue_noise(int width, int height, int threads,
     utility::Cleanup device_cleanup(
         [](void *ptr) { vkDestroyDevice(*((VkDevice *)ptr), nullptr); },
         &device);
+
+    VkQueue compute_queue;
+    vkGetDeviceQueue(device, indices.computeFamily.value(), 0, &compute_queue);
+
+    std::array<VkDescriptorSetLayoutBinding, 4> compute_layout_bindings{};
+    compute_layout_bindings[0].binding = 0;
+    compute_layout_bindings[0].descriptorCount = 1;
+    compute_layout_bindings[0].descriptorType =
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compute_layout_bindings[0].pImmutableSamplers = nullptr;
+    compute_layout_bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    compute_layout_bindings[1].binding = 0;
+    compute_layout_bindings[1].descriptorCount = 1;
+    compute_layout_bindings[1].descriptorType =
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compute_layout_bindings[1].pImmutableSamplers = nullptr;
+    compute_layout_bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    compute_layout_bindings[2].binding = 0;
+    compute_layout_bindings[2].descriptorCount = 1;
+    compute_layout_bindings[2].descriptorType =
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compute_layout_bindings[2].pImmutableSamplers = nullptr;
+    compute_layout_bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    compute_layout_bindings[3].binding = 0;
+    compute_layout_bindings[3].descriptorCount = 1;
+    compute_layout_bindings[3].descriptorType =
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compute_layout_bindings[3].pImmutableSamplers = nullptr;
+    compute_layout_bindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layout_info{};
+    layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layout_info.bindingCount = compute_layout_bindings.size();
+    layout_info.pBindings = compute_layout_bindings.data();
+
+    VkDescriptorSetLayout compute_desc_set_layout;
+    if (vkCreateDescriptorSetLayout(device, &layout_info, nullptr,
+                                    &compute_desc_set_layout) != VK_SUCCESS) {
+      std::clog << "WARNING: Failed to create compute descriptor set layout!\n";
+      goto ENDOF_VULKAN;
+    }
+    utility::Cleanup compute_desc_set_layout_cleanup(
+        [device](void *ptr) {
+          vkDestroyDescriptorSetLayout(device, *((VkDescriptorSetLayout *)ptr),
+                                       nullptr);
+        },
+        &compute_desc_set_layout);
   }
 ENDOF_VULKAN:
   std::clog << "TODO: Remove this once Vulkan support is implemented.\n";
