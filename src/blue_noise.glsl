@@ -34,8 +34,8 @@ void main() {
     return;
   }
 
-  int x = index % width;
-  int y = index / width;
+  int x = int(index % width);
+  int y = int(index / width);
 
   float sum = 0.0F;
   for (int q = 0; q < filter_size; ++q) {

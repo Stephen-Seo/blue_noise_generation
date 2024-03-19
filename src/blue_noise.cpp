@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -278,21 +279,21 @@ image::Bl dither::blue_noise(int width, int height, int threads,
     compute_layout_bindings[0].pImmutableSamplers = nullptr;
     compute_layout_bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-    compute_layout_bindings[1].binding = 0;
+    compute_layout_bindings[1].binding = 1;
     compute_layout_bindings[1].descriptorCount = 1;
     compute_layout_bindings[1].descriptorType =
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     compute_layout_bindings[1].pImmutableSamplers = nullptr;
     compute_layout_bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-    compute_layout_bindings[2].binding = 0;
+    compute_layout_bindings[2].binding = 2;
     compute_layout_bindings[2].descriptorCount = 1;
     compute_layout_bindings[2].descriptorType =
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     compute_layout_bindings[2].pImmutableSamplers = nullptr;
     compute_layout_bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-    compute_layout_bindings[3].binding = 0;
+    compute_layout_bindings[3].binding = 3;
     compute_layout_bindings[3].descriptorCount = 1;
     compute_layout_bindings[3].descriptorType =
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -316,6 +317,30 @@ image::Bl dither::blue_noise(int width, int height, int threads,
                                        nullptr);
         },
         &compute_desc_set_layout);
+
+    // Check and compile compute shader.
+    {
+      std::ifstream ifs("src/blue_noise.glsl");
+      if (ifs.good()) {
+        ifs.close();
+        if (std::system("glslc -fshader-stage=compute -o compute.spv src/blue_noise.glsl") != 0) {
+          std::clog << "WARNING: Failed to compile src/blue_noise.glsl!\n";
+          goto ENDOF_VULKAN;
+        }
+      } else {
+        ifs = std::ifstream("../src/blue_noise.glsl");
+        if (ifs.good()) {
+          ifs.close();
+          if (std::system("glslc -fshader-stage=compute -o compute.spv ../src/blue_noise.glsl") != 0) {
+            std::clog << "WARNING: Failed to compile ../src/blue_noise.glsl!\n";
+            goto ENDOF_VULKAN;
+          }
+        } else {
+          std::clog << "WARNING: Unable to find blue_noise.glsl!\n";
+          goto ENDOF_VULKAN;
+        }
+      }
+    }
   }
 ENDOF_VULKAN:
   std::clog << "TODO: Remove this once Vulkan support is implemented.\n";
