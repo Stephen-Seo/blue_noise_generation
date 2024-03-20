@@ -676,8 +676,14 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       vkMapMemory(device, staging_buffer_mem, 0, other_size, 0, &data_ptr);
       std::memcpy(data_ptr, &width, sizeof(int));
       std::memcpy(((char *)data_ptr) + sizeof(int), &height, sizeof(int));
-      std::memcpy(((char *)data_ptr) + sizeof(int) * 2, &filter_size,
-                  sizeof(int));
+      if (filter_size % 2 == 0) {
+        int filter_size_odd = filter_size + 1;
+        std::memcpy(((char *)data_ptr) + sizeof(int) * 2, &filter_size_odd,
+                    sizeof(int));
+      } else {
+        std::memcpy(((char *)data_ptr) + sizeof(int) * 2, &filter_size,
+                    sizeof(int));
+      }
       vkUnmapMemory(device, staging_buffer_mem);
 
       if (!vulkan_create_buffer(device, phys_device, other_size,
