@@ -425,6 +425,25 @@ image::Bl dither::blue_noise(int width, int height, int threads,
           },
           &compute_pipeline);
     }
+
+    VkCommandPool command_pool;
+    {
+      VkCommandPoolCreateInfo pool_info{};
+      pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+      pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+      pool_info.queueFamilyIndex = indices.computeFamily.value();
+
+      if (vkCreateCommandPool(device, &pool_info, nullptr, &command_pool) !=
+          VK_SUCCESS) {
+        std::clog << "WARNING: Failed to create vulkan command pool!\n";
+        goto ENDOF_VULKAN;
+      }
+    }
+    utility::Cleanup cleanup_command_pool(
+        [device](void *ptr) {
+          vkDestroyCommandPool(device, *((VkCommandPool *)ptr), nullptr);
+        },
+        &command_pool);
   }
 ENDOF_VULKAN:
   std::clog << "TODO: Remove this once Vulkan support is implemented.\n";
