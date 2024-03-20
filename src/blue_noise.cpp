@@ -436,29 +436,29 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       }
     }
 
-    // Load shader.
-    std::vector<char> shader;
-    {
-      std::ifstream ifs("compute.spv");
-      if (!ifs.good()) {
-        std::clog << "WARNING: Failed to find compute.spv!\n";
-        goto ENDOF_VULKAN;
-      }
-      ifs.seekg(0, std::ios_base::end);
-      auto size = ifs.tellg();
-      shader.resize(size);
-
-      ifs.seekg(0);
-      ifs.read(shader.data(), size);
-      ifs.close();
-    }
-
     // create compute pipeline.
     VkPipelineLayout compute_pipeline_layout;
     VkPipeline compute_pipeline;
     utility::Cleanup cleanup_pipeline_layout{};
     utility::Cleanup cleanup_pipeline{};
     {
+      // Load shader.
+      std::vector<char> shader;
+      {
+        std::ifstream ifs("compute.spv");
+        if (!ifs.good()) {
+          std::clog << "WARNING: Failed to find compute.spv!\n";
+          goto ENDOF_VULKAN;
+        }
+        ifs.seekg(0, std::ios_base::end);
+        auto size = ifs.tellg();
+        shader.resize(size);
+
+        ifs.seekg(0);
+        ifs.read(shader.data(), size);
+        ifs.close();
+      }
+
       VkShaderModuleCreateInfo shader_module_create_info{};
       shader_module_create_info.sType =
           VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
