@@ -12,7 +12,7 @@ set(blueNoiseGen_SOURCES
 add_compile_options(
     -Wall -Wextra -Wpedantic
     $<$<COMPILE_LANGUAGE:CXX>:-Weffc++>
-    $<$<CONFIG:DEBUG>:-O0>
+    $<$<CONFIG:DEBUG>:-Og>
 )
 
 if(NOT DEFINED CMAKE_BUILD_TYPE OR NOT CMAKE_BUILD_TYPE)
