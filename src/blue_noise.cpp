@@ -320,25 +320,27 @@ image::Bl dither::blue_noise(int width, int height, int threads,
 
     // Check and compile compute shader.
     {
-      std::ifstream ifs("src/blue_noise.glsl");
-      if (ifs.good()) {
-        ifs.close();
-        if (std::system("glslc -fshader-stage=compute -o compute.spv src/blue_noise.glsl") != 0) {
-          std::clog << "WARNING: Failed to compile src/blue_noise.glsl!\n";
-          goto ENDOF_VULKAN;
-        }
-      } else {
-        ifs = std::ifstream("../src/blue_noise.glsl");
+      std::array<const char *, 3> filenames{
+          "blue_noise.glsl", "src/blue_noise.glsl", "../src/blue_noise.glsl"};
+      bool success = false;
+      for (const auto filename : filenames) {
+        std::ifstream ifs(filename);
         if (ifs.good()) {
           ifs.close();
-          if (std::system("glslc -fshader-stage=compute -o compute.spv ../src/blue_noise.glsl") != 0) {
-            std::clog << "WARNING: Failed to compile ../src/blue_noise.glsl!\n";
+          std::string command("glslc -fshader-stage=compute -o compute.spv ");
+          command.append(filename);
+          if (std::system(command.c_str()) != 0) {
+            std::clog << "WARNING: Failed to compile " << filename << "!\n";
             goto ENDOF_VULKAN;
+          } else {
+            success = true;
+            break;
           }
-        } else {
-          std::clog << "WARNING: Unable to find blue_noise.glsl!\n";
-          goto ENDOF_VULKAN;
         }
+      }
+      if (!success) {
+        std::clog << "WARNING: Could not find blue_noise.glsl!\n";
+        goto ENDOF_VULKAN;
       }
     }
   }
