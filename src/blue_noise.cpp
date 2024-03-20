@@ -70,9 +70,6 @@ QueueFamilyIndices find_queue_families(VkPhysicalDevice device) {
 
 image::Bl dither::blue_noise(int width, int height, int threads,
                              bool use_opencl, bool use_vulkan) {
-  bool using_opencl = false;
-  bool using_vulkan = false;
-
 #if DITHERING_VULKAN_ENABLED == 1
   if (use_vulkan) {
     // Try to use Vulkan.
@@ -525,16 +522,11 @@ ENDOF_VULKAN:
   std::clog << "WARNING: Not compiled with OpenCL support!\n";
 #endif
 
-  if (!using_opencl) {
-    std::cout << "OpenCL: Failed to setup/use or is not enabled, using "
-                 "regular impl..."
-              << std::endl;
-    return internal::rangeToBl(
-        internal::blue_noise_impl(width, height, threads), width);
-  }
-
-  std::cout << "ERROR: Invalid state (end of blue_noise fn)\n";
-  return {};
+  std::cout << "Vulkan/OpenCL: Failed to setup/use or is not enabled, using "
+               "regular impl..."
+            << std::endl;
+  return internal::rangeToBl(internal::blue_noise_impl(width, height, threads),
+                             width);
 }
 
 std::vector<unsigned int> dither::internal::blue_noise_impl(int width,
