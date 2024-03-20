@@ -343,6 +343,91 @@ image::Bl dither::blue_noise(int width, int height, int threads,
         goto ENDOF_VULKAN;
       }
     }
+
+    // Load shader.
+    std::vector<char> shader;
+    {
+      std::ifstream ifs("compute.spv");
+      if (!ifs.good()) {
+        std::clog << "WARNING: Failed to find compute.spv!\n";
+        goto ENDOF_VULKAN;
+      }
+      ifs.seekg(0, std::ios_base::end);
+      auto size = ifs.tellg();
+      shader.resize(size);
+
+      ifs.seekg(0);
+      ifs.read(shader.data(), size);
+      ifs.close();
+    }
+
+    // create compute pipeline.
+    VkPipelineLayout compute_pipeline_layout;
+    VkPipeline compute_pipeline;
+    utility::Cleanup cleanup_pipeline_layout(utility::Cleanup::Nop{});
+    utility::Cleanup cleanup_pipeline(utility::Cleanup::Nop{});
+    {
+      VkShaderModuleCreateInfo shader_module_create_info{};
+      shader_module_create_info.sType =
+          VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+      shader_module_create_info.codeSize = shader.size();
+      shader_module_create_info.pCode =
+          reinterpret_cast<const uint32_t *>(shader.data());
+
+      VkShaderModule compute_shader_module;
+      if (vkCreateShaderModule(device, &shader_module_create_info, nullptr,
+                               &compute_shader_module) != VK_SUCCESS) {
+        std::clog << "WARNING: Failed to create shader module!\n";
+        goto ENDOF_VULKAN;
+      }
+
+      utility::Cleanup cleanup_shader_module(
+          [device](void *ptr) {
+            vkDestroyShaderModule(device, *((VkShaderModule *)ptr), nullptr);
+          },
+          &compute_shader_module);
+
+      VkPipelineShaderStageCreateInfo compute_shader_stage_info{};
+      compute_shader_stage_info.sType =
+          VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+      compute_shader_stage_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+      compute_shader_stage_info.module = compute_shader_module;
+      compute_shader_stage_info.pName = "main";
+
+      VkPipelineLayoutCreateInfo pipeline_layout_info{};
+      pipeline_layout_info.sType =
+          VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+      pipeline_layout_info.setLayoutCount = 1;
+      pipeline_layout_info.pSetLayouts = &compute_desc_set_layout;
+
+      if (vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr,
+                                 &compute_pipeline_layout) != VK_SUCCESS) {
+        std::clog << "WARNING: Failed to create compute pipeline layout!\n";
+        goto ENDOF_VULKAN;
+      }
+      cleanup_pipeline_layout = utility::Cleanup(
+          [device](void *ptr) {
+            vkDestroyPipelineLayout(device, *((VkPipelineLayout *)ptr),
+                                    nullptr);
+          },
+          &compute_pipeline_layout);
+
+      VkComputePipelineCreateInfo pipeline_info{};
+      pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+      pipeline_info.layout = compute_pipeline_layout;
+      pipeline_info.stage = compute_shader_stage_info;
+
+      if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline_info,
+                                   nullptr, &compute_pipeline) != VK_SUCCESS) {
+        std::clog << "WARNING: Failed to create compute pipeline!\n";
+        goto ENDOF_VULKAN;
+      }
+      cleanup_pipeline = utility::Cleanup(
+          [device](void *ptr) {
+            vkDestroyPipeline(device, *((VkPipeline *)ptr), nullptr);
+          },
+          &compute_pipeline);
+    }
   }
 ENDOF_VULKAN:
   std::clog << "TODO: Remove this once Vulkan support is implemented.\n";

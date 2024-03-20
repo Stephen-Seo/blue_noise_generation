@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <functional>
+#include <optional>
 #include <utility>
 
 namespace utility {
@@ -32,19 +33,22 @@ inline float dist(int a, int b, int width) {
 
 class Cleanup {
  public:
+  struct Nop {};
+
   Cleanup(std::function<void(void *)> fn, void *ptr);
+  Cleanup(Nop nop);
   ~Cleanup();
 
   // allow move
-  Cleanup(Cleanup &&) = default;
-  Cleanup &operator=(Cleanup &&) = default;
+  Cleanup(Cleanup &&);
+  Cleanup &operator=(Cleanup &&);
 
   // deny copy
   Cleanup(const Cleanup &) = delete;
   Cleanup &operator=(const Cleanup &) = delete;
 
  private:
-  std::function<void(void *)> fn;
+  std::optional<std::function<void(void *)>> fn;
   void *ptr;
 };
 }  // namespace utility
