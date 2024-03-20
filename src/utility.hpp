@@ -33,10 +33,8 @@ inline float dist(int a, int b, int width) {
 
 class Cleanup {
  public:
-  struct Nop {};
-
+  Cleanup();
   Cleanup(std::function<void(void *)> fn, void *ptr);
-  Cleanup(Nop nop);
   ~Cleanup();
 
   // allow move

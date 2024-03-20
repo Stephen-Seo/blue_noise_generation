@@ -3,7 +3,7 @@
 utility::Cleanup::Cleanup(std::function<void(void *)> fn, void *ptr)
     : fn(fn), ptr(ptr) {}
 
-utility::Cleanup::Cleanup(Nop) : fn(), ptr(nullptr) {}
+utility::Cleanup::Cleanup() : fn(), ptr(nullptr) {}
 
 utility::Cleanup::~Cleanup() {
   if (this->fn.has_value()) {

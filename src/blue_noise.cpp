@@ -456,8 +456,8 @@ image::Bl dither::blue_noise(int width, int height, int threads,
     // create compute pipeline.
     VkPipelineLayout compute_pipeline_layout;
     VkPipeline compute_pipeline;
-    utility::Cleanup cleanup_pipeline_layout(utility::Cleanup::Nop{});
-    utility::Cleanup cleanup_pipeline(utility::Cleanup::Nop{});
+    utility::Cleanup cleanup_pipeline_layout{};
+    utility::Cleanup cleanup_pipeline{};
     {
       VkShaderModuleCreateInfo shader_module_create_info{};
       shader_module_create_info.sType =
@@ -549,8 +549,8 @@ image::Bl dither::blue_noise(int width, int height, int threads,
 
     VkBuffer precomputed_buf;
     VkDeviceMemory precomputed_buf_mem;
-    utility::Cleanup cleanup_precomputed_buf(utility::Cleanup::Nop{});
-    utility::Cleanup cleanup_precomputed_buf_mem(utility::Cleanup::Nop{});
+    utility::Cleanup cleanup_precomputed_buf{};
+    utility::Cleanup cleanup_precomputed_buf_mem{};
     {
       VkBuffer staging_buffer;
       VkDeviceMemory staging_buffer_mem;
@@ -647,8 +647,8 @@ image::Bl dither::blue_noise(int width, int height, int threads,
 
     VkBuffer other_buf;
     VkDeviceMemory other_buf_mem;
-    utility::Cleanup cleanup_other_buf(utility::Cleanup::Nop{});
-    utility::Cleanup cleanup_other_buf_mem(utility::Cleanup::Nop{});
+    utility::Cleanup cleanup_other_buf{};
+    utility::Cleanup cleanup_other_buf_mem{};
     {
       VkBuffer staging_buffer;
       VkDeviceMemory staging_buffer_mem;
