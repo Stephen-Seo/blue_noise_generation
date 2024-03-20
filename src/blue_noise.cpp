@@ -64,6 +64,101 @@ QueueFamilyIndices find_queue_families(VkPhysicalDevice device) {
   return indices;
 }
 
+std::optional<uint32_t> vulkan_find_memory_type(VkPhysicalDevice phys_dev,
+                                                uint32_t t_filter,
+                                                VkMemoryPropertyFlags props) {
+  VkPhysicalDeviceMemoryProperties mem_props;
+  vkGetPhysicalDeviceMemoryProperties(phys_dev, &mem_props);
+
+  for (uint32_t idx = 0; idx < mem_props.memoryTypeCount; ++idx) {
+    if ((t_filter & (1 << idx)) &&
+        (mem_props.memoryTypes[idx].propertyFlags & props) == props) {
+      return idx;
+    }
+  }
+
+  return std::nullopt;
+}
+
+bool vulkan_create_buffer(VkDevice device, VkPhysicalDevice phys_dev,
+                          VkDeviceSize size, VkBufferUsageFlags usage,
+                          VkMemoryPropertyFlags props, VkBuffer &buf,
+                          VkDeviceMemory &buf_mem) {
+  VkBufferCreateInfo buf_info{};
+  buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  buf_info.size = size;
+  buf_info.usage = usage;
+  buf_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+  if (vkCreateBuffer(device, &buf_info, nullptr, &buf) != VK_SUCCESS) {
+    std::clog << "WARNING: Failed to create buffer!\n";
+    buf = nullptr;
+    return false;
+  }
+
+  VkMemoryRequirements mem_reqs;
+  vkGetBufferMemoryRequirements(device, buf, &mem_reqs);
+
+  VkMemoryAllocateInfo alloc_info{};
+  alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  alloc_info.allocationSize = mem_reqs.size;
+
+  auto mem_type =
+      vulkan_find_memory_type(phys_dev, mem_reqs.memoryTypeBits, props);
+  if (!mem_type.has_value()) {
+    vkDestroyBuffer(device, buf, nullptr);
+    buf = nullptr;
+    return false;
+  }
+  alloc_info.memoryTypeIndex = mem_type.value();
+
+  if (vkAllocateMemory(device, &alloc_info, nullptr, &buf_mem) != VK_SUCCESS) {
+    std::clog << "WARNING: Failed to allocate buffer memory!\n";
+    vkDestroyBuffer(device, buf, nullptr);
+    buf = nullptr;
+    return false;
+  }
+
+  vkBindBufferMemory(device, buf, buf_mem, 0);
+
+  return true;
+}
+
+void vulkan_copy_buffer(VkDevice device, VkCommandPool command_pool,
+                        VkQueue queue, VkBuffer src_buf, VkBuffer dst_buf,
+                        VkDeviceSize size) {
+  VkCommandBufferAllocateInfo alloc_info{};
+  alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  alloc_info.commandPool = command_pool;
+  alloc_info.commandBufferCount = 1;
+
+  VkCommandBuffer command_buf;
+  vkAllocateCommandBuffers(device, &alloc_info, &command_buf);
+
+  VkCommandBufferBeginInfo begin_info{};
+  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkBeginCommandBuffer(command_buf, &begin_info);
+
+  VkBufferCopy copy_region{};
+  copy_region.size = size;
+  vkCmdCopyBuffer(command_buf, src_buf, dst_buf, 1, &copy_region);
+
+  vkEndCommandBuffer(command_buf);
+
+  VkSubmitInfo submit_info{};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &command_buf;
+
+  vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+  vkQueueWaitIdle(queue);
+
+  vkFreeCommandBuffers(device, command_pool, 1, &command_buf);
+}
+
 #endif  // DITHERING_VULKAN_ENABLED == 1
 
 #include "image.hpp"
@@ -444,6 +539,169 @@ image::Bl dither::blue_noise(int width, int height, int threads,
           vkDestroyCommandPool(device, *((VkCommandPool *)ptr), nullptr);
         },
         &command_pool);
+
+    int filter_size = (width + height) / 2;
+    std::vector<float> precomputed = internal::precompute_gaussian(filter_size);
+    VkDeviceSize precomputed_size = sizeof(float) * precomputed.size();
+    VkDeviceSize filter_out_size = sizeof(float) * width * height;
+    VkDeviceSize pbp_size = sizeof(int) * width * height;
+    VkDeviceSize other_size = sizeof(int) * 3;
+
+    VkBuffer precomputed_buf;
+    VkDeviceMemory precomputed_buf_mem;
+    utility::Cleanup cleanup_precomputed_buf(utility::Cleanup::Nop{});
+    utility::Cleanup cleanup_precomputed_buf_mem(utility::Cleanup::Nop{});
+    {
+      VkBuffer staging_buffer;
+      VkDeviceMemory staging_buffer_mem;
+
+      if (!vulkan_create_buffer(device, phys_device, precomputed_size,
+                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                staging_buffer, staging_buffer_mem)) {
+        std::clog << "WARNING: Failed to create staging buffer!\n";
+        goto ENDOF_VULKAN;
+      }
+      utility::Cleanup cleanup_staging_buf(
+          [device](void *ptr) {
+            vkDestroyBuffer(device, *((VkBuffer *)ptr), nullptr);
+          },
+          &staging_buffer);
+      utility::Cleanup cleanup_staging_buf_mem(
+          [device](void *ptr) {
+            vkFreeMemory(device, *((VkDeviceMemory *)ptr), nullptr);
+          },
+          &staging_buffer_mem);
+
+      void *data_ptr;
+      vkMapMemory(device, staging_buffer_mem, 0, precomputed_size, 0,
+                  &data_ptr);
+      std::memcpy(data_ptr, precomputed.data(), precomputed_size);
+      vkUnmapMemory(device, staging_buffer_mem);
+
+      if (!vulkan_create_buffer(device, phys_device, precomputed_size,
+                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                precomputed_buf, precomputed_buf_mem)) {
+        std::clog << "WARNING: Failed to create precomputed buffer!\n";
+        goto ENDOF_VULKAN;
+      }
+      cleanup_precomputed_buf = utility::Cleanup(
+          [device](void *ptr) {
+            vkDestroyBuffer(device, *((VkBuffer *)ptr), nullptr);
+          },
+          &precomputed_buf);
+      cleanup_precomputed_buf_mem = utility::Cleanup(
+          [device](void *ptr) {
+            vkFreeMemory(device, *((VkDeviceMemory *)ptr), nullptr);
+          },
+          &precomputed_buf_mem);
+
+      vulkan_copy_buffer(device, command_pool, compute_queue, staging_buffer,
+                         precomputed_buf, precomputed_size);
+    }
+
+    VkBuffer filter_out_buf;
+    VkDeviceMemory filter_out_buf_mem;
+    if (!vulkan_create_buffer(device, phys_device, filter_out_size,
+                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                              filter_out_buf, filter_out_buf_mem)) {
+      std::clog << "WARNING: Failed to create filter_out buffer!\n";
+      goto ENDOF_VULKAN;
+    }
+    utility::Cleanup cleanup_filter_out_buf(
+        [device](void *ptr) {
+          vkDestroyBuffer(device, *((VkBuffer *)ptr), nullptr);
+        },
+        &filter_out_buf);
+    utility::Cleanup cleanup_filter_out_buf_mem(
+        [device](void *ptr) {
+          vkFreeMemory(device, *((VkDeviceMemory *)ptr), nullptr);
+        },
+        &filter_out_buf_mem);
+
+    VkBuffer pbp_buf;
+    VkDeviceMemory pbp_buf_mem;
+    if (!vulkan_create_buffer(device, phys_device, pbp_size,
+                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                  VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, pbp_buf,
+                              pbp_buf_mem)) {
+      std::clog << "WARNING: Failed to create pbp buffer!\n";
+      goto ENDOF_VULKAN;
+    }
+    utility::Cleanup cleanup_pbp_buf(
+        [device](void *ptr) {
+          vkDestroyBuffer(device, *((VkBuffer *)ptr), nullptr);
+        },
+        &pbp_buf);
+    utility::Cleanup cleanup_pbp_buf_mem(
+        [device](void *ptr) {
+          vkFreeMemory(device, *((VkDeviceMemory *)ptr), nullptr);
+        },
+        &pbp_buf_mem);
+
+    VkBuffer other_buf;
+    VkDeviceMemory other_buf_mem;
+    utility::Cleanup cleanup_other_buf(utility::Cleanup::Nop{});
+    utility::Cleanup cleanup_other_buf_mem(utility::Cleanup::Nop{});
+    {
+      VkBuffer staging_buffer;
+      VkDeviceMemory staging_buffer_mem;
+
+      if (!vulkan_create_buffer(device, phys_device, other_size,
+                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                staging_buffer, staging_buffer_mem)) {
+        std::clog << "WARNING: Failed to create staging buffer!\n";
+        goto ENDOF_VULKAN;
+      }
+      utility::Cleanup cleanup_staging_buf(
+          [device](void *ptr) {
+            vkDestroyBuffer(device, *((VkBuffer *)ptr), nullptr);
+          },
+          &staging_buffer);
+      utility::Cleanup cleanup_staging_buf_mem(
+          [device](void *ptr) {
+            vkFreeMemory(device, *((VkDeviceMemory *)ptr), nullptr);
+          },
+          &staging_buffer_mem);
+
+      void *data_ptr;
+      vkMapMemory(device, staging_buffer_mem, 0, other_size, 0, &data_ptr);
+      std::memcpy(data_ptr, &width, sizeof(int));
+      std::memcpy(((char *)data_ptr) + sizeof(int), &height, sizeof(int));
+      std::memcpy(((char *)data_ptr) + sizeof(int) * 2, &filter_size,
+                  sizeof(int));
+      vkUnmapMemory(device, staging_buffer_mem);
+
+      if (!vulkan_create_buffer(device, phys_device, other_size,
+                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, other_buf,
+                                other_buf_mem)) {
+        std::clog << "WARNING: Failed to create other buffer!\n";
+        goto ENDOF_VULKAN;
+      }
+      cleanup_other_buf = utility::Cleanup(
+          [device](void *ptr) {
+            vkDestroyBuffer(device, *((VkBuffer *)ptr), nullptr);
+          },
+          &other_buf);
+      cleanup_other_buf_mem = utility::Cleanup(
+          [device](void *ptr) {
+            vkFreeMemory(device, *((VkDeviceMemory *)ptr), nullptr);
+          },
+          &other_buf_mem);
+
+      vulkan_copy_buffer(device, command_pool, compute_queue, staging_buffer,
+                         other_buf, other_size);
+    }
   }
 ENDOF_VULKAN:
   std::clog << "TODO: Remove this once Vulkan support is implemented.\n";
