@@ -263,7 +263,7 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       auto create_debug_utils_messenger_func =
           (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
               instance, "vkCreateDebugUtilsMessengerEXT");
-      if (create_debug_utils_messenger_func != nullptr &&
+      if (create_debug_utils_messenger_func == nullptr ||
           create_debug_utils_messenger_func(instance, &debug_create_info,
                                             nullptr,
                                             &debug_messenger) != VK_SUCCESS) {
