@@ -203,212 +203,230 @@ image::Bl dither::blue_noise(int width, int height, int threads,
     VK_EXTENSIONS.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif  // VULKAN_VALIDATION == 1
 
-    VkApplicationInfo app_info{};
-    app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    app_info.pApplicationName = "Blue Noise Generation";
-    app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    app_info.pEngineName = "No Engine";
-    app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    app_info.apiVersion = VK_API_VERSION_1_0;
-
-    VkInstanceCreateInfo create_info{};
-    create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    create_info.pApplicationInfo = &app_info;
-
-    create_info.enabledExtensionCount = VK_EXTENSIONS.size();
-    create_info.ppEnabledExtensionNames = VK_EXTENSIONS.data();
-
-    VkDebugUtilsMessengerCreateInfoEXT debug_create_info{};
-#if VULKAN_VALIDATION == 1
-    create_info.enabledLayerCount = VALIDATION_LAYERS.size();
-    create_info.ppEnabledLayerNames = VALIDATION_LAYERS.data();
-
-    const auto populate_debug_info =
-        [](VkDebugUtilsMessengerCreateInfoEXT *info) {
-          info->sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-          info->messageSeverity =
-              VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-              VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-              VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-          info->messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                              VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                              VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-          info->pfnUserCallback = fn_VULKAN_DEBUG_CALLBACK;
-        };
-
-    populate_debug_info(&debug_create_info);
-
-    create_info.pNext = &debug_create_info;
-#else
-    create_info.enabledLayerCount = 0;
-    create_info.pNext = nullptr;
-#endif  // VULKAN_VALIDATION == 1
-
     VkInstance instance;
-    if (vkCreateInstance(&create_info, nullptr, &instance) != VK_SUCCESS) {
-      std::clog << "WARNING: Failed to create Vulkan instance!\n";
-      goto ENDOF_VULKAN;
-    }
-    utility::Cleanup cleanup_vk_instance(
-        [](void *ptr) { vkDestroyInstance(*((VkInstance *)ptr), nullptr); },
-        &instance);
+    utility::Cleanup cleanup_vk_instance{};
+    VkDebugUtilsMessengerEXT debug_messenger;
+    utility::Cleanup cleanup_debug_messenger{};
+    {
+      VkApplicationInfo app_info{};
+      app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+      app_info.pApplicationName = "Blue Noise Generation";
+      app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+      app_info.pEngineName = "No Engine";
+      app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+      app_info.apiVersion = VK_API_VERSION_1_0;
+
+      VkInstanceCreateInfo create_info{};
+      create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+      create_info.pApplicationInfo = &app_info;
+
+      create_info.enabledExtensionCount = VK_EXTENSIONS.size();
+      create_info.ppEnabledExtensionNames = VK_EXTENSIONS.data();
+
+      VkDebugUtilsMessengerCreateInfoEXT debug_create_info{};
+#if VULKAN_VALIDATION == 1
+      create_info.enabledLayerCount = VALIDATION_LAYERS.size();
+      create_info.ppEnabledLayerNames = VALIDATION_LAYERS.data();
+
+      const auto populate_debug_info =
+          [](VkDebugUtilsMessengerCreateInfoEXT *info) {
+            info->sType =
+                VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+            info->messageSeverity =
+                VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+            info->messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                                VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                                VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+            info->pfnUserCallback = fn_VULKAN_DEBUG_CALLBACK;
+          };
+
+      populate_debug_info(&debug_create_info);
+
+      create_info.pNext = &debug_create_info;
+#else
+      create_info.enabledLayerCount = 0;
+      create_info.pNext = nullptr;
+#endif  // VULKAN_VALIDATION == 1
+      if (vkCreateInstance(&create_info, nullptr, &instance) != VK_SUCCESS) {
+        std::clog << "WARNING: Failed to create Vulkan instance!\n";
+        goto ENDOF_VULKAN;
+      }
+      cleanup_vk_instance = utility::Cleanup(
+          [](void *ptr) { vkDestroyInstance(*((VkInstance *)ptr), nullptr); },
+          &instance);
 
 #if VULKAN_VALIDATION == 1
-    populate_debug_info(&debug_create_info);
-    VkDebugUtilsMessengerEXT debug_messenger;
+      populate_debug_info(&debug_create_info);
 
-    auto create_debug_utils_messenger_func =
-        (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
-            instance, "vkCreateDebugUtilsMessengerEXT");
-    if (create_debug_utils_messenger_func != nullptr &&
-        create_debug_utils_messenger_func(instance, &debug_create_info, nullptr,
-                                          &debug_messenger) != VK_SUCCESS) {
-      std::clog << "WARNING: Failed to set up Vulkan debug messenger!\n";
-      goto ENDOF_VULKAN;
-    }
-    utility::Cleanup cleanup_debug_messenger(
-        [instance](void *ptr) {
-          auto func =
-              (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
-                  instance, "vkDestroyDebugUtilsMessengerEXT");
-          if (func != nullptr) {
-            func(instance, *((VkDebugUtilsMessengerEXT *)ptr), nullptr);
-          }
-        },
-        &debug_messenger);
-#endif  // VULKAN_VALIDATION == 1
-    uint32_t device_count = 0;
-    vkEnumeratePhysicalDevices(instance, &device_count, nullptr);
-    if (device_count == 0) {
-      std::clog << "WARNING: No GPUs available with Vulkan support!\n";
-      goto ENDOF_VULKAN;
-    }
-    std::vector<VkPhysicalDevice> devices(device_count);
-    vkEnumeratePhysicalDevices(instance, &device_count, devices.data());
-
-    std::optional<VkPhysicalDevice> gpu_dev_discrete;
-    std::optional<VkPhysicalDevice> gpu_dev_integrated;
-    for (const auto &device : devices) {
-      auto indices = find_queue_families(device);
-
-      VkPhysicalDeviceProperties dev_props{};
-      vkGetPhysicalDeviceProperties(device, &dev_props);
-
-      if (indices.isComplete()) {
-        if (dev_props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-          gpu_dev_discrete = device;
-        } else if (dev_props.deviceType ==
-                   VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
-          gpu_dev_integrated = device;
-        }
+      auto create_debug_utils_messenger_func =
+          (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
+              instance, "vkCreateDebugUtilsMessengerEXT");
+      if (create_debug_utils_messenger_func != nullptr &&
+          create_debug_utils_messenger_func(instance, &debug_create_info,
+                                            nullptr,
+                                            &debug_messenger) != VK_SUCCESS) {
+        std::clog << "WARNING: Failed to set up Vulkan debug messenger!\n";
+        goto ENDOF_VULKAN;
       }
+      cleanup_debug_messenger = utility::Cleanup(
+          [instance](void *ptr) {
+            auto func =
+                (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
+                    instance, "vkDestroyDebugUtilsMessengerEXT");
+            if (func != nullptr) {
+              func(instance, *((VkDebugUtilsMessengerEXT *)ptr), nullptr);
+            }
+          },
+          &debug_messenger);
+#endif  // VULKAN_VALIDATION == 1
     }
 
     VkPhysicalDevice phys_device;
-    if (gpu_dev_discrete.has_value()) {
-      std::clog << "NOTICE: Found discrete GPU supporting Vulkan compute.\n";
-      phys_device = gpu_dev_discrete.value();
-    } else if (gpu_dev_integrated.has_value()) {
-      std::clog << "NOTICE: Found integrated GPU supporting Vulkan compute.\n";
-      phys_device = gpu_dev_integrated.value();
-    } else {
-      std::clog << "WARNING: No suitable GPUs found!\n";
-      goto ENDOF_VULKAN;
+    {
+      uint32_t device_count = 0;
+      vkEnumeratePhysicalDevices(instance, &device_count, nullptr);
+      if (device_count == 0) {
+        std::clog << "WARNING: No GPUs available with Vulkan support!\n";
+        goto ENDOF_VULKAN;
+      }
+      std::vector<VkPhysicalDevice> devices(device_count);
+      vkEnumeratePhysicalDevices(instance, &device_count, devices.data());
+
+      std::optional<VkPhysicalDevice> gpu_dev_discrete;
+      std::optional<VkPhysicalDevice> gpu_dev_integrated;
+      for (const auto &device : devices) {
+        auto indices = find_queue_families(device);
+
+        VkPhysicalDeviceProperties dev_props{};
+        vkGetPhysicalDeviceProperties(device, &dev_props);
+
+        if (indices.isComplete()) {
+          if (dev_props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+            gpu_dev_discrete = device;
+          } else if (dev_props.deviceType ==
+                     VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+            gpu_dev_integrated = device;
+          }
+        }
+      }
+
+      if (gpu_dev_discrete.has_value()) {
+        std::clog << "NOTICE: Found discrete GPU supporting Vulkan compute.\n";
+        phys_device = gpu_dev_discrete.value();
+      } else if (gpu_dev_integrated.has_value()) {
+        std::clog
+            << "NOTICE: Found integrated GPU supporting Vulkan compute.\n";
+        phys_device = gpu_dev_integrated.value();
+      } else {
+        std::clog << "WARNING: No suitable GPUs found!\n";
+        goto ENDOF_VULKAN;
+      }
     }
-
-    auto indices = find_queue_families(phys_device);
-    std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-    std::unordered_set<uint32_t> unique_queue_families = {
-        indices.computeFamily.value()};
-
-    float queue_priority = 1.0F;
-    for (uint32_t queue_family : unique_queue_families) {
-      VkDeviceQueueCreateInfo queue_create_info{};
-      queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-      queue_create_info.queueFamilyIndex = queue_family;
-      queue_create_info.queueCount = 1;
-      queue_create_info.pQueuePriorities = &queue_priority;
-      queue_create_infos.push_back(queue_create_info);
-    }
-
-    VkPhysicalDeviceFeatures device_features{};
-
-    VkDeviceCreateInfo dev_create_info{};
-    dev_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-
-    dev_create_info.queueCreateInfoCount = queue_create_infos.size();
-    dev_create_info.pQueueCreateInfos = queue_create_infos.data();
-
-    dev_create_info.pEnabledFeatures = &device_features;
-
-    dev_create_info.enabledExtensionCount = 0;
-
-#if VULKAN_VALIDATION == 1
-    dev_create_info.enabledLayerCount = VALIDATION_LAYERS.size();
-    dev_create_info.ppEnabledLayerNames = VALIDATION_LAYERS.data();
-#else
-    dev_create_info.enabledLayerCount = 0;
-#endif
 
     VkDevice device;
-    if (vkCreateDevice(phys_device, &dev_create_info, nullptr, &device) !=
-        VK_SUCCESS) {
-      std::clog << "WARNING: Failed to create VkDevice!\n";
-      goto ENDOF_VULKAN;
+    utility::Cleanup device_cleanup{};
+    {
+      auto indices = find_queue_families(phys_device);
+      std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
+      std::unordered_set<uint32_t> unique_queue_families = {
+          indices.computeFamily.value()};
+
+      float queue_priority = 1.0F;
+      for (uint32_t queue_family : unique_queue_families) {
+        VkDeviceQueueCreateInfo queue_create_info{};
+        queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queue_create_info.queueFamilyIndex = queue_family;
+        queue_create_info.queueCount = 1;
+        queue_create_info.pQueuePriorities = &queue_priority;
+        queue_create_infos.push_back(queue_create_info);
+      }
+
+      VkPhysicalDeviceFeatures device_features{};
+
+      VkDeviceCreateInfo dev_create_info{};
+      dev_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+
+      dev_create_info.queueCreateInfoCount = queue_create_infos.size();
+      dev_create_info.pQueueCreateInfos = queue_create_infos.data();
+
+      dev_create_info.pEnabledFeatures = &device_features;
+
+      dev_create_info.enabledExtensionCount = 0;
+
+#if VULKAN_VALIDATION == 1
+      dev_create_info.enabledLayerCount = VALIDATION_LAYERS.size();
+      dev_create_info.ppEnabledLayerNames = VALIDATION_LAYERS.data();
+#else
+      dev_create_info.enabledLayerCount = 0;
+#endif
+
+      if (vkCreateDevice(phys_device, &dev_create_info, nullptr, &device) !=
+          VK_SUCCESS) {
+        std::clog << "WARNING: Failed to create VkDevice!\n";
+        goto ENDOF_VULKAN;
+      }
+      device_cleanup = utility::Cleanup(
+          [](void *ptr) { vkDestroyDevice(*((VkDevice *)ptr), nullptr); },
+          &device);
     }
-    utility::Cleanup device_cleanup(
-        [](void *ptr) { vkDestroyDevice(*((VkDevice *)ptr), nullptr); },
-        &device);
 
     VkQueue compute_queue;
-    vkGetDeviceQueue(device, indices.computeFamily.value(), 0, &compute_queue);
-
-    std::array<VkDescriptorSetLayoutBinding, 4> compute_layout_bindings{};
-    compute_layout_bindings[0].binding = 0;
-    compute_layout_bindings[0].descriptorCount = 1;
-    compute_layout_bindings[0].descriptorType =
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compute_layout_bindings[0].pImmutableSamplers = nullptr;
-    compute_layout_bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    compute_layout_bindings[1].binding = 1;
-    compute_layout_bindings[1].descriptorCount = 1;
-    compute_layout_bindings[1].descriptorType =
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compute_layout_bindings[1].pImmutableSamplers = nullptr;
-    compute_layout_bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    compute_layout_bindings[2].binding = 2;
-    compute_layout_bindings[2].descriptorCount = 1;
-    compute_layout_bindings[2].descriptorType =
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compute_layout_bindings[2].pImmutableSamplers = nullptr;
-    compute_layout_bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    compute_layout_bindings[3].binding = 3;
-    compute_layout_bindings[3].descriptorCount = 1;
-    compute_layout_bindings[3].descriptorType =
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compute_layout_bindings[3].pImmutableSamplers = nullptr;
-    compute_layout_bindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layout_info{};
-    layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layout_info.bindingCount = compute_layout_bindings.size();
-    layout_info.pBindings = compute_layout_bindings.data();
+    vkGetDeviceQueue(device,
+                     find_queue_families(phys_device).computeFamily.value(), 0,
+                     &compute_queue);
 
     VkDescriptorSetLayout compute_desc_set_layout;
-    if (vkCreateDescriptorSetLayout(device, &layout_info, nullptr,
-                                    &compute_desc_set_layout) != VK_SUCCESS) {
-      std::clog << "WARNING: Failed to create compute descriptor set layout!\n";
-      goto ENDOF_VULKAN;
+    utility::Cleanup compute_desc_set_layout_cleanup{};
+    {
+      std::array<VkDescriptorSetLayoutBinding, 4> compute_layout_bindings{};
+      compute_layout_bindings[0].binding = 0;
+      compute_layout_bindings[0].descriptorCount = 1;
+      compute_layout_bindings[0].descriptorType =
+          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      compute_layout_bindings[0].pImmutableSamplers = nullptr;
+      compute_layout_bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+      compute_layout_bindings[1].binding = 1;
+      compute_layout_bindings[1].descriptorCount = 1;
+      compute_layout_bindings[1].descriptorType =
+          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      compute_layout_bindings[1].pImmutableSamplers = nullptr;
+      compute_layout_bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+      compute_layout_bindings[2].binding = 2;
+      compute_layout_bindings[2].descriptorCount = 1;
+      compute_layout_bindings[2].descriptorType =
+          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      compute_layout_bindings[2].pImmutableSamplers = nullptr;
+      compute_layout_bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+      compute_layout_bindings[3].binding = 3;
+      compute_layout_bindings[3].descriptorCount = 1;
+      compute_layout_bindings[3].descriptorType =
+          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      compute_layout_bindings[3].pImmutableSamplers = nullptr;
+      compute_layout_bindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+      VkDescriptorSetLayoutCreateInfo layout_info{};
+      layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+      layout_info.bindingCount = compute_layout_bindings.size();
+      layout_info.pBindings = compute_layout_bindings.data();
+
+      if (vkCreateDescriptorSetLayout(device, &layout_info, nullptr,
+                                      &compute_desc_set_layout) != VK_SUCCESS) {
+        std::clog
+            << "WARNING: Failed to create compute descriptor set layout!\n";
+        goto ENDOF_VULKAN;
+      }
+      compute_desc_set_layout_cleanup = utility::Cleanup(
+          [device](void *ptr) {
+            vkDestroyDescriptorSetLayout(
+                device, *((VkDescriptorSetLayout *)ptr), nullptr);
+          },
+          &compute_desc_set_layout);
     }
-    utility::Cleanup compute_desc_set_layout_cleanup(
-        [device](void *ptr) {
-          vkDestroyDescriptorSetLayout(device, *((VkDescriptorSetLayout *)ptr),
-                                       nullptr);
-        },
-        &compute_desc_set_layout);
 
     // Check and compile compute shader.
     {
@@ -526,7 +544,8 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       VkCommandPoolCreateInfo pool_info{};
       pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
       pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-      pool_info.queueFamilyIndex = indices.computeFamily.value();
+      pool_info.queueFamilyIndex =
+          find_queue_families(phys_device).computeFamily.value();
 
       if (vkCreateCommandPool(device, &pool_info, nullptr, &command_pool) !=
           VK_SUCCESS) {
