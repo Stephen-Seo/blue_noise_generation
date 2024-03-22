@@ -33,6 +33,12 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL fn_VULKAN_DEBUG_CALLBACK(
 }
 #endif  // VULKAN_VALIDATION == 1
 
+dither::internal::QueueFamilyIndices::QueueFamilyIndices() : computeFamily() {}
+
+bool dither::internal::QueueFamilyIndices::isComplete() {
+  return computeFamily.has_value();
+}
+
 dither::internal::QueueFamilyIndices
 dither::internal::vulkan_find_queue_families(VkPhysicalDevice device) {
   QueueFamilyIndices indices;

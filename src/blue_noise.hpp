@@ -39,11 +39,11 @@ std::vector<unsigned int> blue_noise_impl(int width, int height,
 
 #if DITHERING_VULKAN_ENABLED == 1
 struct QueueFamilyIndices {
-  QueueFamilyIndices() : computeFamily() {}
+  QueueFamilyIndices();
 
   std::optional<uint32_t> computeFamily;
 
-  bool isComplete() { return computeFamily.has_value(); }
+  bool isComplete();
 };
 
 QueueFamilyIndices vulkan_find_queue_families(VkPhysicalDevice device);
