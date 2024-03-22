@@ -17,7 +17,6 @@
 #endif
 
 #if DITHERING_VULKAN_ENABLED == 1
-#include <vulkan/vulkan.h>
 
 static std::vector<const char *> VK_EXTENSIONS = {};
 
@@ -34,15 +33,8 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL fn_VULKAN_DEBUG_CALLBACK(
 }
 #endif  // VULKAN_VALIDATION == 1
 
-struct QueueFamilyIndices {
-  QueueFamilyIndices() : computeFamily() {}
-
-  std::optional<uint32_t> computeFamily;
-
-  bool isComplete() { return computeFamily.has_value(); }
-};
-
-QueueFamilyIndices find_queue_families(VkPhysicalDevice device) {
+dither::internal::QueueFamilyIndices
+dither::internal::vulkan_find_queue_families(VkPhysicalDevice device) {
   QueueFamilyIndices indices;
   uint32_t queue_family_count = 0;
   vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count,
@@ -64,9 +56,8 @@ QueueFamilyIndices find_queue_families(VkPhysicalDevice device) {
   return indices;
 }
 
-std::optional<uint32_t> vulkan_find_memory_type(VkPhysicalDevice phys_dev,
-                                                uint32_t t_filter,
-                                                VkMemoryPropertyFlags props) {
+std::optional<uint32_t> dither::internal::vulkan_find_memory_type(
+    VkPhysicalDevice phys_dev, uint32_t t_filter, VkMemoryPropertyFlags props) {
   VkPhysicalDeviceMemoryProperties mem_props;
   vkGetPhysicalDeviceMemoryProperties(phys_dev, &mem_props);
 
@@ -80,10 +71,10 @@ std::optional<uint32_t> vulkan_find_memory_type(VkPhysicalDevice phys_dev,
   return std::nullopt;
 }
 
-bool vulkan_create_buffer(VkDevice device, VkPhysicalDevice phys_dev,
-                          VkDeviceSize size, VkBufferUsageFlags usage,
-                          VkMemoryPropertyFlags props, VkBuffer &buf,
-                          VkDeviceMemory &buf_mem) {
+bool dither::internal::vulkan_create_buffer(
+    VkDevice device, VkPhysicalDevice phys_dev, VkDeviceSize size,
+    VkBufferUsageFlags usage, VkMemoryPropertyFlags props, VkBuffer &buf,
+    VkDeviceMemory &buf_mem) {
   VkBufferCreateInfo buf_info{};
   buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
   buf_info.size = size;
@@ -124,9 +115,10 @@ bool vulkan_create_buffer(VkDevice device, VkPhysicalDevice phys_dev,
   return true;
 }
 
-void vulkan_copy_buffer(VkDevice device, VkCommandPool command_pool,
-                        VkQueue queue, VkBuffer src_buf, VkBuffer dst_buf,
-                        VkDeviceSize size) {
+void dither::internal::vulkan_copy_buffer(VkDevice device,
+                                          VkCommandPool command_pool,
+                                          VkQueue queue, VkBuffer src_buf,
+                                          VkBuffer dst_buf, VkDeviceSize size) {
   VkCommandBufferAllocateInfo alloc_info{};
   alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
   alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -297,7 +289,7 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       std::optional<VkPhysicalDevice> gpu_dev_discrete;
       std::optional<VkPhysicalDevice> gpu_dev_integrated;
       for (const auto &device : devices) {
-        auto indices = find_queue_families(device);
+        auto indices = internal::vulkan_find_queue_families(device);
 
         VkPhysicalDeviceProperties dev_props{};
         vkGetPhysicalDeviceProperties(device, &dev_props);
@@ -328,7 +320,7 @@ image::Bl dither::blue_noise(int width, int height, int threads,
     VkDevice device;
     utility::Cleanup device_cleanup{};
     {
-      auto indices = find_queue_families(phys_device);
+      auto indices = internal::vulkan_find_queue_families(phys_device);
       std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
       std::unordered_set<uint32_t> unique_queue_families = {
           indices.computeFamily.value()};
@@ -373,9 +365,10 @@ image::Bl dither::blue_noise(int width, int height, int threads,
     }
 
     VkQueue compute_queue;
-    vkGetDeviceQueue(device,
-                     find_queue_families(phys_device).computeFamily.value(), 0,
-                     &compute_queue);
+    vkGetDeviceQueue(
+        device,
+        internal::vulkan_find_queue_families(phys_device).computeFamily.value(),
+        0, &compute_queue);
 
     VkDescriptorSetLayout compute_desc_set_layout;
     utility::Cleanup compute_desc_set_layout_cleanup{};
@@ -545,7 +538,8 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
       pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
       pool_info.queueFamilyIndex =
-          find_queue_families(phys_device).computeFamily.value();
+          internal::vulkan_find_queue_families(phys_device)
+              .computeFamily.value();
 
       if (vkCreateCommandPool(device, &pool_info, nullptr, &command_pool) !=
           VK_SUCCESS) {
@@ -574,11 +568,12 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       VkBuffer staging_buffer;
       VkDeviceMemory staging_buffer_mem;
 
-      if (!vulkan_create_buffer(device, phys_device, precomputed_size,
-                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                staging_buffer, staging_buffer_mem)) {
+      if (!internal::vulkan_create_buffer(
+              device, phys_device, precomputed_size,
+              VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+              staging_buffer, staging_buffer_mem)) {
         std::clog << "WARNING: Failed to create staging buffer!\n";
         goto ENDOF_VULKAN;
       }
@@ -599,11 +594,12 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       std::memcpy(data_ptr, precomputed.data(), precomputed_size);
       vkUnmapMemory(device, staging_buffer_mem);
 
-      if (!vulkan_create_buffer(device, phys_device, precomputed_size,
-                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                precomputed_buf, precomputed_buf_mem)) {
+      if (!internal::vulkan_create_buffer(device, phys_device, precomputed_size,
+                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                              VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                          precomputed_buf,
+                                          precomputed_buf_mem)) {
         std::clog << "WARNING: Failed to create precomputed buffer!\n";
         goto ENDOF_VULKAN;
       }
@@ -618,17 +614,18 @@ image::Bl dither::blue_noise(int width, int height, int threads,
           },
           &precomputed_buf_mem);
 
-      vulkan_copy_buffer(device, command_pool, compute_queue, staging_buffer,
-                         precomputed_buf, precomputed_size);
+      internal::vulkan_copy_buffer(device, command_pool, compute_queue,
+                                   staging_buffer, precomputed_buf,
+                                   precomputed_size);
     }
 
     VkBuffer filter_out_buf;
     VkDeviceMemory filter_out_buf_mem;
-    if (!vulkan_create_buffer(device, phys_device, filter_out_size,
-                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                              filter_out_buf, filter_out_buf_mem)) {
+    if (!internal::vulkan_create_buffer(device, phys_device, filter_out_size,
+                                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                        filter_out_buf, filter_out_buf_mem)) {
       std::clog << "WARNING: Failed to create filter_out buffer!\n";
       goto ENDOF_VULKAN;
     }
@@ -645,11 +642,11 @@ image::Bl dither::blue_noise(int width, int height, int threads,
 
     VkBuffer pbp_buf;
     VkDeviceMemory pbp_buf_mem;
-    if (!vulkan_create_buffer(device, phys_device, pbp_size,
-                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                  VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, pbp_buf,
-                              pbp_buf_mem)) {
+    if (!internal::vulkan_create_buffer(device, phys_device, pbp_size,
+                                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                        pbp_buf, pbp_buf_mem)) {
       std::clog << "WARNING: Failed to create pbp buffer!\n";
       goto ENDOF_VULKAN;
     }
@@ -672,11 +669,11 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       VkBuffer staging_buffer;
       VkDeviceMemory staging_buffer_mem;
 
-      if (!vulkan_create_buffer(device, phys_device, other_size,
-                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                staging_buffer, staging_buffer_mem)) {
+      if (!internal::vulkan_create_buffer(
+              device, phys_device, other_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+              staging_buffer, staging_buffer_mem)) {
         std::clog << "WARNING: Failed to create staging buffer!\n";
         goto ENDOF_VULKAN;
       }
@@ -705,11 +702,11 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       }
       vkUnmapMemory(device, staging_buffer_mem);
 
-      if (!vulkan_create_buffer(device, phys_device, other_size,
-                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, other_buf,
-                                other_buf_mem)) {
+      if (!internal::vulkan_create_buffer(device, phys_device, other_size,
+                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                              VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                          other_buf, other_buf_mem)) {
         std::clog << "WARNING: Failed to create other buffer!\n";
         goto ENDOF_VULKAN;
       }
@@ -724,8 +721,8 @@ image::Bl dither::blue_noise(int width, int height, int threads,
           },
           &other_buf_mem);
 
-      vulkan_copy_buffer(device, command_pool, compute_queue, staging_buffer,
-                         other_buf, other_size);
+      internal::vulkan_copy_buffer(device, command_pool, compute_queue,
+                                   staging_buffer, other_buf, other_size);
     }
   }
 ENDOF_VULKAN:

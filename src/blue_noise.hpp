@@ -4,6 +4,9 @@
 #if DITHERING_OPENCL_ENABLED == 1
 #include <CL/opencl.h>
 #endif
+#if DITHERING_VULKAN_ENABLED == 1
+#include <vulkan/vulkan.h>
+#endif
 #include <sys/sysinfo.h>
 
 #include <cassert>
@@ -33,6 +36,32 @@ image::Bl blue_noise(int width, int height, int threads = 1,
 namespace internal {
 std::vector<unsigned int> blue_noise_impl(int width, int height,
                                           int threads = 1);
+
+#if DITHERING_VULKAN_ENABLED == 1
+struct QueueFamilyIndices {
+  QueueFamilyIndices() : computeFamily() {}
+
+  std::optional<uint32_t> computeFamily;
+
+  bool isComplete() { return computeFamily.has_value(); }
+};
+
+QueueFamilyIndices vulkan_find_queue_families(VkPhysicalDevice device);
+
+std::optional<uint32_t> vulkan_find_memory_type(VkPhysicalDevice phys_dev,
+                                                uint32_t t_filter,
+                                                VkMemoryPropertyFlags props);
+
+bool vulkan_create_buffer(VkDevice device, VkPhysicalDevice phys_dev,
+                          VkDeviceSize size, VkBufferUsageFlags usage,
+                          VkMemoryPropertyFlags props, VkBuffer &buf,
+                          VkDeviceMemory &buf_mem);
+
+void vulkan_copy_buffer(VkDevice device, VkCommandPool command_pool,
+                        VkQueue queue, VkBuffer src_buf, VkBuffer dst_buf,
+                        VkDeviceSize size);
+#endif
+
 #if DITHERING_OPENCL_ENABLED == 1
 std::vector<unsigned int> blue_noise_cl_impl(const int width, const int height,
                                              const int filter_size,
