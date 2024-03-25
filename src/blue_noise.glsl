@@ -12,15 +12,13 @@ int twoToOne(int x, int y, int width, int height) {
   return x + y * width;
 }
 
-layout(std140, binding = 0) readonly buffer PreComputed {
-  float precomputed[];
-};
+layout(binding = 0) readonly buffer PreComputed { float precomputed[]; };
 
-layout(std140, binding = 1) writeonly buffer FilterOut { float filter_out[]; };
+layout(binding = 1) writeonly buffer FilterOut { float filter_out[]; };
 
-layout(std140, binding = 2) readonly buffer PBP { int pbp[]; };
+layout(binding = 2) readonly buffer PBP { int pbp[]; };
 
-layout(std140, binding = 3) readonly buffer Other {
+layout(binding = 3) readonly buffer Other {
   int width;
   int height;
   int filter_size;

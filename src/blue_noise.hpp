@@ -7,7 +7,6 @@
 #if DITHERING_VULKAN_ENABLED == 1
 #include <vulkan/vulkan.h>
 #endif
-#include <sys/sysinfo.h>
 
 #include <cassert>
 #include <chrono>
@@ -60,6 +59,13 @@ bool vulkan_create_buffer(VkDevice device, VkPhysicalDevice phys_dev,
 void vulkan_copy_buffer(VkDevice device, VkCommandPool command_pool,
                         VkQueue queue, VkBuffer src_buf, VkBuffer dst_buf,
                         VkDeviceSize size);
+
+std::vector<unsigned int> blue_noise_vulkan_impl(
+    VkDevice device, VkPhysicalDevice phys_device,
+    VkCommandBuffer command_buffer, VkCommandPool command_pool, VkQueue queue,
+    VkBuffer pbp_buf, VkPipeline pipeline, VkPipelineLayout pipeline_layout,
+    VkDescriptorSet descriptor_set, VkBuffer filter_out_buf, const int width,
+    const int height);
 #endif
 
 #if DITHERING_OPENCL_ENABLED == 1

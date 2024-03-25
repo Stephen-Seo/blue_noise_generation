@@ -157,6 +157,343 @@ void dither::internal::vulkan_copy_buffer(VkDevice device,
   vkFreeCommandBuffers(device, command_pool, 1, &command_buf);
 }
 
+std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
+    VkDevice device, VkPhysicalDevice phys_device,
+    VkCommandBuffer command_buffer, VkCommandPool command_pool, VkQueue queue,
+    VkBuffer pbp_buf, VkPipeline pipeline, VkPipelineLayout pipeline_layout,
+    VkDescriptorSet descriptor_set, VkBuffer filter_out_buf, const int width,
+    const int height) {
+  const int size = width * height;
+  const int pixel_count = size * 4 / 10;
+  const int local_size = 256;
+  const std::size_t global_size =
+      (std::size_t)std::ceil((float)size / (float)local_size);
+
+  std::vector<bool> pbp = random_noise(size, pixel_count);
+  std::vector<int> pbp_i(pbp.size());
+  std::vector<float> filter(size);
+  bool reversed_pbp = false;
+
+  const auto get_filter = [device, phys_device, command_buffer, command_pool,
+                           queue, pbp_buf, pipeline, pipeline_layout,
+                           descriptor_set, filter_out_buf, size, &pbp, &pbp_i,
+                           &reversed_pbp, global_size, &filter]() -> bool {
+    for (unsigned int i = 0; i < pbp.size(); ++i) {
+      if (reversed_pbp) {
+        pbp_i[i] = pbp[i] ? 0 : 1;
+      } else {
+        pbp_i[i] = pbp[i] ? 1 : 0;
+      }
+    }
+
+    vkResetCommandBuffer(command_buffer, 0);
+
+    // Copy pbp buffer.
+    {
+      VkBuffer staging_buffer;
+      VkDeviceMemory staging_buffer_mem;
+
+      if (!internal::vulkan_create_buffer(
+              device, phys_device, size * sizeof(int),
+              VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+              staging_buffer, staging_buffer_mem)) {
+        std::clog << "get_filter ERROR: Failed to create staging buffer!\n";
+        return false;
+      }
+      utility::Cleanup cleanup_staging_buf(
+          [device](void *ptr) {
+            vkDestroyBuffer(device, *((VkBuffer *)ptr), nullptr);
+          },
+          &staging_buffer);
+      utility::Cleanup cleanup_staging_buf_mem(
+          [device](void *ptr) {
+            vkFreeMemory(device, *((VkDeviceMemory *)ptr), nullptr);
+          },
+          &staging_buffer_mem);
+
+      void *data_ptr;
+      vkMapMemory(device, staging_buffer_mem, 0, size * sizeof(int), 0,
+                  &data_ptr);
+      std::memcpy(data_ptr, pbp_i.data(), size * sizeof(int));
+      vkUnmapMemory(device, staging_buffer_mem);
+
+      vulkan_copy_buffer(device, command_pool, queue, staging_buffer, pbp_buf,
+                         size * sizeof(int));
+    }
+
+    VkCommandBufferBeginInfo begin_info{};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+    if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
+      std::clog << "get_filter ERROR: Failed to begin recording compute "
+                   "command buffer!\n";
+      return false;
+    }
+
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                            pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
+    vkCmdDispatch(command_buffer, global_size, 1, 1);
+    if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
+      std::clog
+          << "get_filter ERROR: Failed to record compute command buffer!\n";
+      return false;
+    }
+
+    {
+      VkSubmitInfo submit_info{};
+      submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+      submit_info.commandBufferCount = 1;
+      submit_info.pCommandBuffers = &command_buffer;
+      submit_info.signalSemaphoreCount = 0;
+      submit_info.pSignalSemaphores = nullptr;
+
+      if (vkQueueSubmit(queue, 1, &submit_info, nullptr) != VK_SUCCESS) {
+        std::clog
+            << "get_filter ERROR: Failed to submit compute command buffer!\n";
+        return false;
+      }
+    }
+
+    if (vkDeviceWaitIdle(device) != VK_SUCCESS) {
+      std::clog << "get_filter ERROR: Failed to vkDeviceWaitIdle!\n";
+      return false;
+    }
+
+    // Copy back filter_out buffer.
+    {
+      VkBuffer staging_buffer;
+      VkDeviceMemory staging_buffer_mem;
+
+      if (!internal::vulkan_create_buffer(
+              device, phys_device, size * sizeof(float),
+              VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+              staging_buffer, staging_buffer_mem)) {
+        std::clog << "get_filter ERROR: Failed to create staging buffer!\n";
+        return false;
+      }
+      utility::Cleanup cleanup_staging_buf(
+          [device](void *ptr) {
+            vkDestroyBuffer(device, *((VkBuffer *)ptr), nullptr);
+          },
+          &staging_buffer);
+      utility::Cleanup cleanup_staging_buf_mem(
+          [device](void *ptr) {
+            vkFreeMemory(device, *((VkDeviceMemory *)ptr), nullptr);
+          },
+          &staging_buffer_mem);
+
+      vulkan_copy_buffer(device, command_pool, queue, filter_out_buf,
+                         staging_buffer, size * sizeof(float));
+
+      void *data_ptr;
+      vkMapMemory(device, staging_buffer_mem, 0, size * sizeof(float), 0,
+                  &data_ptr);
+      std::memcpy(filter.data(), data_ptr, size * sizeof(float));
+      vkUnmapMemory(device, staging_buffer_mem);
+    }
+
+    return true;
+  };
+
+  {
+#ifndef NDEBUG
+    printf("Inserting %d pixels into image of max count %d\n", pixel_count,
+           size);
+    // generate image from randomized pbp
+    FILE *random_noise_image = fopen("random_noise.pbm", "w");
+    fprintf(random_noise_image, "P1\n%d %d\n", width, height);
+    for (int y = 0; y < height; ++y) {
+      for (int x = 0; x < width; ++x) {
+        fprintf(random_noise_image, "%d ",
+                pbp[utility::twoToOne(x, y, width, height)] ? 1 : 0);
+      }
+      fputc('\n', random_noise_image);
+    }
+    fclose(random_noise_image);
+#endif
+  }
+
+  if (!get_filter()) {
+    std::cerr << "Vulkan: Failed to execute get_filter at start!\n";
+  } else {
+#ifndef NDEBUG
+    internal::write_filter(filter, width, "filter_out_start.pgm");
+#endif
+  }
+
+  int iterations = 0;
+
+  std::cout << "Begin BinaryArray generation loop\n";
+  while (true) {
+#ifndef NDEBUG
+    printf("Iteration %d\n", ++iterations);
+#endif
+
+    if (!get_filter()) {
+      std::cerr << "Vulkan: Failed to execute do_filter\n";
+      break;
+    }
+
+    int min, max;
+    std::tie(min, max) = internal::filter_minmax(filter, pbp);
+
+    pbp[max] = false;
+
+    if (!get_filter()) {
+      std::cerr << "Vulkan: Failed to execute do_filter\n";
+      break;
+    }
+
+    // get second buffer's min
+    int second_min;
+    std::tie(second_min, std::ignore) = internal::filter_minmax(filter, pbp);
+
+    if (second_min == max) {
+      pbp[max] = true;
+      break;
+    } else {
+      pbp[second_min] = true;
+    }
+
+    if (iterations % 100 == 0) {
+#ifndef NDEBUG
+      std::cout << "max was " << max << ", second_min is " << second_min
+                << std::endl;
+      // generate blue_noise image from pbp
+      FILE *blue_noise_image = fopen("blue_noise.pbm", "w");
+      fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          fprintf(blue_noise_image, "%d ",
+                  pbp[utility::twoToOne(x, y, width, height)] ? 1 : 0);
+        }
+        fputc('\n', blue_noise_image);
+      }
+      fclose(blue_noise_image);
+#endif
+    }
+  }
+
+  if (!get_filter()) {
+    std::cerr << "Vulkan: Failed to execute do_filter (at end)\n";
+  } else {
+#ifndef NDEBUG
+    internal::write_filter(filter, width, "filter_out_final.pgm");
+    FILE *blue_noise_image = fopen("blue_noise.pbm", "w");
+    fprintf(blue_noise_image, "P1\n%d %d\n", width, height);
+    for (int y = 0; y < height; ++y) {
+      for (int x = 0; x < width; ++x) {
+        fprintf(blue_noise_image, "%d ",
+                pbp[utility::twoToOne(x, y, width, height)] ? 1 : 0);
+      }
+      fputc('\n', blue_noise_image);
+    }
+    fclose(blue_noise_image);
+#endif
+  }
+
+#ifndef NDEBUG
+  {
+    image::Bl pbp_image = toBl(pbp, width);
+    pbp_image.writeToFile(image::file_type::PNG, true, "debug_pbp_before.png");
+  }
+#endif
+
+  std::cout << "Generating dither_array...\n";
+#ifndef NDEBUG
+  std::unordered_set<unsigned int> set;
+#endif
+  std::vector<unsigned int> dither_array(size, 0);
+  int min, max;
+  {
+    std::vector<bool> pbp_copy(pbp);
+    std::cout << "Ranking minority pixels...\n";
+    for (unsigned int i = pixel_count; i-- > 0;) {
+#ifndef NDEBUG
+      std::cout << i << ' ';
+#endif
+      get_filter();
+      std::tie(std::ignore, max) = internal::filter_minmax(filter, pbp);
+      pbp.at(max) = false;
+      dither_array.at(max) = i;
+#ifndef NDEBUG
+      if (set.find(max) != set.end()) {
+        std::cout << "\nWARNING: Reusing index " << max << '\n';
+      } else {
+        set.insert(max);
+      }
+#endif
+    }
+    pbp = pbp_copy;
+#ifndef NDEBUG
+    image::Bl min_pixels = internal::rangeToBl(dither_array, width);
+    min_pixels.writeToFile(image::file_type::PNG, true, "da_min_pixels.png");
+#endif
+  }
+  std::cout << "\nRanking remainder of first half of pixels...\n";
+  for (unsigned int i = pixel_count; i < (unsigned int)((size + 1) / 2); ++i) {
+#ifndef NDEBUG
+    std::cout << i << ' ';
+#endif
+    get_filter();
+    std::tie(min, std::ignore) = internal::filter_minmax(filter, pbp);
+    pbp.at(min) = true;
+    dither_array.at(min) = i;
+#ifndef NDEBUG
+    if (set.find(min) != set.end()) {
+      std::cout << "\nWARNING: Reusing index " << min << '\n';
+    } else {
+      set.insert(min);
+    }
+#endif
+  }
+#ifndef NDEBUG
+  {
+    image::Bl min_pixels = internal::rangeToBl(dither_array, width);
+    min_pixels.writeToFile(image::file_type::PNG, true, "da_mid_pixels.png");
+    get_filter();
+    internal::write_filter(filter, width, "filter_mid.pgm");
+    image::Bl pbp_image = toBl(pbp, width);
+    pbp_image.writeToFile(image::file_type::PNG, true, "debug_pbp_mid.png");
+  }
+#endif
+  std::cout << "\nRanking last half of pixels...\n";
+  reversed_pbp = true;
+  for (unsigned int i = (size + 1) / 2; i < (unsigned int)size; ++i) {
+#ifndef NDEBUG
+    std::cout << i << ' ';
+#endif
+    get_filter();
+    std::tie(std::ignore, max) = internal::filter_minmax(filter, pbp);
+    pbp.at(max) = true;
+    dither_array.at(max) = i;
+#ifndef NDEBUG
+    if (set.find(max) != set.end()) {
+      std::cout << "\nWARNING: Reusing index " << max << '\n';
+    } else {
+      set.insert(max);
+    }
+#endif
+  }
+  std::cout << std::endl;
+
+#ifndef NDEBUG
+  {
+    get_filter();
+    internal::write_filter(filter, width, "filter_after.pgm");
+    image::Bl pbp_image = toBl(pbp, width);
+    pbp_image.writeToFile(image::file_type::PNG, true, "debug_pbp_after.png");
+  }
+#endif
+
+  return dither_array;
+}
+
 #endif  // DITHERING_VULKAN_ENABLED == 1
 
 #include "image.hpp"
@@ -840,10 +1177,18 @@ image::Bl dither::blue_noise(int width, int height, int threads,
         goto ENDOF_VULKAN;
       }
     }
+
+    auto result = dither::internal::blue_noise_vulkan_impl(
+        device, phys_device, command_buffer, command_pool, compute_queue,
+        pbp_buf, compute_pipeline, compute_pipeline_layout,
+        compute_descriptor_set, filter_out_buf, width, height);
+    if (!result.empty()) {
+      return internal::rangeToBl(result, width);
+    }
+    std::cout << "ERROR: Empty result\n";
+    return {};
   }
 ENDOF_VULKAN:
-  std::clog << "TODO: Remove this once Vulkan support is implemented.\n";
-  return {};
 #else
   std::clog << "WARNING: Not compiled with Vulkan support!\n";
 #endif  // DITHERING_VULKAN_ENABLED == 1
