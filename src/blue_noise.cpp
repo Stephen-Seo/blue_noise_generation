@@ -730,6 +730,116 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       internal::vulkan_copy_buffer(device, command_pool, compute_queue,
                                    staging_buffer, other_buf, other_size);
     }
+
+    VkDescriptorPool descriptor_pool;
+    utility::Cleanup cleanup_descriptor_pool{};
+    {
+      VkDescriptorPoolSize pool_size{};
+      pool_size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      pool_size.descriptorCount = 4;
+
+      VkDescriptorPoolCreateInfo pool_info{};
+      pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+      pool_info.poolSizeCount = 1;
+      pool_info.pPoolSizes = &pool_size;
+      pool_info.maxSets = 1;
+
+      if (vkCreateDescriptorPool(device, &pool_info, nullptr,
+                                 &descriptor_pool) != VK_SUCCESS) {
+        std::clog << "WARNING: Failed to create descriptor pool!\n";
+        goto ENDOF_VULKAN;
+      }
+
+      cleanup_descriptor_pool = utility::Cleanup(
+          [device](void *ptr) {
+            vkDestroyDescriptorPool(device, *((VkDescriptorPool *)ptr),
+                                    nullptr);
+          },
+          &descriptor_pool);
+    }
+
+    VkDescriptorSet compute_descriptor_set;
+    {
+      VkDescriptorSetAllocateInfo alloc_info{};
+      alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+      alloc_info.descriptorPool = descriptor_pool;
+      alloc_info.descriptorSetCount = 1;
+      alloc_info.pSetLayouts = &compute_desc_set_layout;
+
+      if (vkAllocateDescriptorSets(device, &alloc_info,
+                                   &compute_descriptor_set) != VK_SUCCESS) {
+        std::clog << "WARNING: Failed to allocate descriptor set!\n";
+        goto ENDOF_VULKAN;
+      }
+
+      std::array<VkWriteDescriptorSet, 4> descriptor_writes{};
+
+      descriptor_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_writes[0].dstSet = compute_descriptor_set;
+      descriptor_writes[0].dstBinding = 0;
+      descriptor_writes[0].dstArrayElement = 0;
+      descriptor_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      descriptor_writes[0].descriptorCount = 1;
+      VkDescriptorBufferInfo precomputed_info{};
+      precomputed_info.buffer = precomputed_buf;
+      precomputed_info.offset = 0;
+      precomputed_info.range = VK_WHOLE_SIZE;
+      descriptor_writes[0].pBufferInfo = &precomputed_info;
+
+      descriptor_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_writes[1].dstSet = compute_descriptor_set;
+      descriptor_writes[1].dstBinding = 1;
+      descriptor_writes[1].dstArrayElement = 0;
+      descriptor_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      descriptor_writes[1].descriptorCount = 1;
+      VkDescriptorBufferInfo filter_out_info{};
+      filter_out_info.buffer = filter_out_buf;
+      filter_out_info.offset = 0;
+      filter_out_info.range = VK_WHOLE_SIZE;
+      descriptor_writes[1].pBufferInfo = &filter_out_info;
+
+      descriptor_writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_writes[2].dstSet = compute_descriptor_set;
+      descriptor_writes[2].dstBinding = 2;
+      descriptor_writes[2].dstArrayElement = 0;
+      descriptor_writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      descriptor_writes[2].descriptorCount = 1;
+      VkDescriptorBufferInfo pbp_info{};
+      pbp_info.buffer = pbp_buf;
+      pbp_info.offset = 0;
+      pbp_info.range = VK_WHOLE_SIZE;
+      descriptor_writes[2].pBufferInfo = &pbp_info;
+
+      descriptor_writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_writes[3].dstSet = compute_descriptor_set;
+      descriptor_writes[3].dstBinding = 3;
+      descriptor_writes[3].dstArrayElement = 0;
+      descriptor_writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      descriptor_writes[3].descriptorCount = 1;
+      VkDescriptorBufferInfo other_info{};
+      other_info.buffer = other_buf;
+      other_info.offset = 0;
+      other_info.range = VK_WHOLE_SIZE;
+      descriptor_writes[3].pBufferInfo = &other_info;
+
+      vkUpdateDescriptorSets(device, descriptor_writes.size(),
+                             descriptor_writes.data(), 0, nullptr);
+    }
+
+    VkCommandBuffer command_buffer;
+    {
+      VkCommandBufferAllocateInfo alloc_info{};
+      alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+      alloc_info.commandPool = command_pool;
+      alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+      alloc_info.commandBufferCount = 1;
+
+      if (vkAllocateCommandBuffers(device, &alloc_info, &command_buffer) !=
+          VK_SUCCESS) {
+        std::clog << "WARNING: Failed to allocate compute command buffer!\n";
+        goto ENDOF_VULKAN;
+      }
+    }
   }
 ENDOF_VULKAN:
   std::clog << "TODO: Remove this once Vulkan support is implemented.\n";
