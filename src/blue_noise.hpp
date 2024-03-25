@@ -66,6 +66,8 @@ std::vector<unsigned int> blue_noise_vulkan_impl(
     VkBuffer pbp_buf, VkPipeline pipeline, VkPipelineLayout pipeline_layout,
     VkDescriptorSet descriptor_set, VkBuffer filter_out_buf, const int width,
     const int height);
+
+std::vector<float> vulkan_buf_to_vec(float *mapped, unsigned int size);
 #endif
 
 #if DITHERING_OPENCL_ENABLED == 1
@@ -287,6 +289,42 @@ inline std::pair<int, int> filter_minmax(const std::vector<float> &filter,
   int max_index = -1;
 
   for (std::vector<float>::size_type i = 0; i < filter.size(); ++i) {
+    if (!pbp[i] && filter[i] < min) {
+      min_index = i;
+      min = filter[i];
+    }
+    if (pbp[i] && filter[i] > max) {
+      max_index = i;
+      max = filter[i];
+    }
+  }
+
+  return {min_index, max_index};
+}
+
+inline std::pair<int, int> filter_minmax_raw_array(const float *const filter,
+                                                   unsigned int size,
+                                                   std::vector<bool> pbp) {
+  // ensure minority pixel is "true"
+  unsigned int count = 0;
+  for (bool value : pbp) {
+    if (value) {
+      ++count;
+    }
+  }
+  if (count * 2 >= pbp.size()) {
+    // std::cout << "MINMAX flip\n"; // DEBUG
+    for (unsigned int i = 0; i < pbp.size(); ++i) {
+      pbp[i] = !pbp[i];
+    }
+  }
+
+  float min = std::numeric_limits<float>::infinity();
+  float max = -std::numeric_limits<float>::infinity();
+  int min_index = -1;
+  int max_index = -1;
+
+  for (unsigned int i = 0; i < size; ++i) {
     if (!pbp[i] && filter[i] < min) {
       min_index = i;
       min = filter[i];
