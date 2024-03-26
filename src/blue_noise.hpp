@@ -82,10 +82,12 @@ inline bool vulkan_get_filter(
     VkDeviceMemory staging_filter_buffer_mem, VkBuffer staging_filter_buffer) {
   vkResetCommandBuffer(command_buffer, 0);
 
-  for (unsigned int i = 0; i < pbp.size(); ++i) {
-    if (reversed_pbp) {
+  if (reversed_pbp) {
+    for (unsigned int i = 0; i < pbp.size(); ++i) {
       pbp_mapped_int[i] = pbp[i] ? 0 : 1;
-    } else {
+    }
+  } else {
+    for (unsigned int i = 0; i < pbp.size(); ++i) {
       pbp_mapped_int[i] = pbp[i] ? 1 : 0;
     }
   }
