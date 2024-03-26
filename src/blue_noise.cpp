@@ -157,6 +157,34 @@ void dither::internal::vulkan_copy_buffer(VkDevice device,
   vkFreeCommandBuffers(device, command_pool, 1, &command_buf);
 }
 
+void dither::internal::vulkan_flush_buffer(VkDevice device,
+                                           VkDeviceMemory memory) {
+  VkMappedMemoryRange range{};
+  range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+  range.pNext = nullptr;
+  range.memory = memory;
+  range.offset = 0;
+  range.size = VK_WHOLE_SIZE;
+
+  if (vkFlushMappedMemoryRanges(device, 1, &range) != VK_SUCCESS) {
+    std::clog << "WARNING: vulkan_flush_buffer failed!\n";
+  }
+}
+
+void dither::internal::vulkan_invalidate_buffer(VkDevice device,
+                                                VkDeviceMemory memory) {
+  VkMappedMemoryRange range{};
+  range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+  range.pNext = nullptr;
+  range.memory = memory;
+  range.offset = 0;
+  range.size = VK_WHOLE_SIZE;
+
+  if (vkInvalidateMappedMemoryRanges(device, 1, &range) != VK_SUCCESS) {
+    std::clog << "WARNING: vulkan_invalidate_buffer failed!\n";
+  }
+}
+
 std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
     VkDevice device, VkPhysicalDevice phys_device,
     VkCommandBuffer command_buffer, VkCommandPool command_pool, VkQueue queue,
@@ -178,7 +206,7 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
   if (!internal::vulkan_create_buffer(device, phys_device, size * sizeof(int),
                                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                          VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
                                       staging_pbp_buffer,
                                       staging_pbp_buffer_mem)) {
     std::clog << "get_filter ERROR: Failed to create staging pbp buffer!\n";
@@ -197,7 +225,7 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
   vkMapMemory(device, staging_pbp_buffer_mem, 0, size * sizeof(int), 0,
               &pbp_mapped);
   utility::Cleanup cleanup_pbp_mapped(
-      [device](void *ptr) { vkUnmapMemory(device, *((VkDeviceMemory  *)ptr)); },
+      [device](void *ptr) { vkUnmapMemory(device, *((VkDeviceMemory *)ptr)); },
       &staging_pbp_buffer_mem);
   int *pbp_mapped_int = (int *)pbp_mapped;
 
@@ -207,7 +235,7 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
   if (!internal::vulkan_create_buffer(device, phys_device, size * sizeof(int),
                                       VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                          VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
                                       staging_filter_buffer,
                                       staging_filter_buffer_mem)) {
     std::clog << "get_filter ERROR: Failed to create staging pbp buffer!\n";
@@ -226,7 +254,7 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
   vkMapMemory(device, staging_filter_buffer_mem, 0, size * sizeof(float), 0,
               &filter_mapped);
   utility::Cleanup cleanup_filter_mapped(
-      [device](void *ptr) { vkUnmapMemory(device, *((VkDeviceMemory  *)ptr)); },
+      [device](void *ptr) { vkUnmapMemory(device, *((VkDeviceMemory *)ptr)); },
       &staging_filter_buffer_mem);
   float *filter_mapped_float = (float *)filter_mapped;
 
@@ -234,6 +262,7 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
                            pipeline, pipeline_layout, descriptor_set,
                            filter_out_buf, size, &pbp, &reversed_pbp,
                            global_size, pbp_mapped_int, staging_pbp_buffer,
+                           staging_pbp_buffer_mem, staging_filter_buffer_mem,
                            staging_filter_buffer]() -> bool {
     vkResetCommandBuffer(command_buffer, 0);
 
@@ -244,6 +273,8 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
         pbp_mapped_int[i] = pbp[i] ? 1 : 0;
       }
     }
+
+    vulkan_flush_buffer(device, staging_pbp_buffer_mem);
 
     // Copy pbp buffer.
     vulkan_copy_buffer(device, command_pool, queue, staging_pbp_buffer, pbp_buf,
@@ -291,6 +322,8 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
     // Copy back filter_out buffer.
     vulkan_copy_buffer(device, command_pool, queue, filter_out_buf,
                        staging_filter_buffer, size * sizeof(float));
+
+    vulkan_flush_buffer(device, staging_filter_buffer_mem);
 
     return true;
   };

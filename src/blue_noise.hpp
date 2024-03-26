@@ -60,6 +60,9 @@ void vulkan_copy_buffer(VkDevice device, VkCommandPool command_pool,
                         VkQueue queue, VkBuffer src_buf, VkBuffer dst_buf,
                         VkDeviceSize size);
 
+void vulkan_flush_buffer(VkDevice device, VkDeviceMemory memory);
+void vulkan_invalidate_buffer(VkDevice device, VkDeviceMemory memory);
+
 std::vector<unsigned int> blue_noise_vulkan_impl(
     VkDevice device, VkPhysicalDevice phys_device,
     VkCommandBuffer command_buffer, VkCommandPool command_pool, VkQueue queue,
