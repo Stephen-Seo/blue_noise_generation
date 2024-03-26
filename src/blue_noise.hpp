@@ -71,6 +71,78 @@ std::vector<unsigned int> blue_noise_vulkan_impl(
     const int height);
 
 std::vector<float> vulkan_buf_to_vec(float *mapped, unsigned int size);
+
+inline bool vulkan_get_filter(
+    VkDevice device, VkCommandBuffer command_buffer, VkCommandPool command_pool,
+    VkQueue queue, VkBuffer pbp_buf, VkPipeline pipeline,
+    VkPipelineLayout pipeline_layout, VkDescriptorSet descriptor_set,
+    VkBuffer filter_out_buf, const int size, std::vector<bool> &pbp,
+    bool &reversed_pbp, const std::size_t global_size, int *pbp_mapped_int,
+    VkBuffer staging_pbp_buffer, VkDeviceMemory staging_pbp_buffer_mem,
+    VkDeviceMemory staging_filter_buffer_mem, VkBuffer staging_filter_buffer) {
+  vkResetCommandBuffer(command_buffer, 0);
+
+  for (unsigned int i = 0; i < pbp.size(); ++i) {
+    if (reversed_pbp) {
+      pbp_mapped_int[i] = pbp[i] ? 0 : 1;
+    } else {
+      pbp_mapped_int[i] = pbp[i] ? 1 : 0;
+    }
+  }
+
+  vulkan_flush_buffer(device, staging_pbp_buffer_mem);
+
+  // Copy pbp buffer.
+  vulkan_copy_buffer(device, command_pool, queue, staging_pbp_buffer, pbp_buf,
+                     size * sizeof(int));
+
+  VkCommandBufferBeginInfo begin_info{};
+  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+  if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
+    std::clog << "get_filter ERROR: Failed to begin recording compute "
+                 "command buffer!\n";
+    return false;
+  }
+
+  vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+  vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                          pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
+  vkCmdDispatch(command_buffer, global_size, 1, 1);
+  if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
+    std::clog << "get_filter ERROR: Failed to record compute command buffer!\n";
+    return false;
+  }
+
+  {
+    VkSubmitInfo submit_info{};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
+    submit_info.signalSemaphoreCount = 0;
+    submit_info.pSignalSemaphores = nullptr;
+
+    if (vkQueueSubmit(queue, 1, &submit_info, nullptr) != VK_SUCCESS) {
+      std::clog
+          << "get_filter ERROR: Failed to submit compute command buffer!\n";
+      return false;
+    }
+  }
+
+  if (vkDeviceWaitIdle(device) != VK_SUCCESS) {
+    std::clog << "get_filter ERROR: Failed to vkDeviceWaitIdle!\n";
+    return false;
+  }
+
+  // Copy back filter_out buffer.
+  vulkan_copy_buffer(device, command_pool, queue, filter_out_buf,
+                     staging_filter_buffer, size * sizeof(float));
+
+  vulkan_invalidate_buffer(device, staging_filter_buffer_mem);
+
+  return true;
+}
+
 #endif
 
 #if DITHERING_OPENCL_ENABLED == 1
