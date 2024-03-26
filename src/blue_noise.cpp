@@ -323,7 +323,7 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
     vulkan_copy_buffer(device, command_pool, queue, filter_out_buf,
                        staging_filter_buffer, size * sizeof(float));
 
-    vulkan_flush_buffer(device, staging_filter_buffer_mem);
+    vulkan_invalidate_buffer(device, staging_filter_buffer_mem);
 
     return true;
   };
