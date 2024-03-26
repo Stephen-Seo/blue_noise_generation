@@ -77,7 +77,7 @@ inline bool vulkan_get_filter(
     VkQueue queue, VkBuffer pbp_buf, VkPipeline pipeline,
     VkPipelineLayout pipeline_layout, VkDescriptorSet descriptor_set,
     VkBuffer filter_out_buf, const int size, std::vector<bool> &pbp,
-    bool &reversed_pbp, const std::size_t global_size, int *pbp_mapped_int,
+    bool reversed_pbp, const std::size_t global_size, int *pbp_mapped_int,
     VkBuffer staging_pbp_buffer, VkDeviceMemory staging_pbp_buffer_mem,
     VkDeviceMemory staging_filter_buffer_mem, VkBuffer staging_filter_buffer) {
   vkResetCommandBuffer(command_buffer, 0);
