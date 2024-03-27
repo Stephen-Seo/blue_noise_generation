@@ -290,7 +290,9 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 #endif
   }
 
+#ifndef NDEBUG
   int iterations = 0;
+#endif
 
   std::cout << "Begin BinaryArray generation loop\n";
   while (true) {
@@ -336,8 +338,8 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
       pbp[second_min] = true;
     }
 
-    if (iterations % 100 == 0) {
 #ifndef NDEBUG
+    if (iterations % 100 == 0) {
       std::cout << "max was " << max << ", second_min is " << second_min
                 << std::endl;
       // generate blue_noise image from pbp
@@ -351,8 +353,8 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
         fputc('\n', blue_noise_image);
       }
       fclose(blue_noise_image);
-#endif
     }
+#endif
   }
 
   if (!vulkan_get_filter(device, command_buffer, command_pool, queue, pbp_buf,
