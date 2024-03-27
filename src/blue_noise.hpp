@@ -48,6 +48,12 @@ struct QueueFamilyIndices {
 
 QueueFamilyIndices vulkan_find_queue_families(VkPhysicalDevice device);
 
+struct FloatAndIndex {
+  float value;
+  int pbp;
+  int idx;
+};
+
 std::optional<uint32_t> vulkan_find_memory_type(VkPhysicalDevice phys_dev,
                                                 uint32_t t_filter,
                                                 VkMemoryPropertyFlags props);
@@ -59,7 +65,8 @@ bool vulkan_create_buffer(VkDevice device, VkPhysicalDevice phys_dev,
 
 void vulkan_copy_buffer(VkDevice device, VkCommandPool command_pool,
                         VkQueue queue, VkBuffer src_buf, VkBuffer dst_buf,
-                        VkDeviceSize size, VkDeviceSize offset = 0);
+                        VkDeviceSize size, VkDeviceSize src_offset = 0,
+                        VkDeviceSize dst_offset = 0);
 void vulkan_copy_buffer_pieces(
     VkDevice device, VkCommandPool command_pool, VkQueue queue,
     VkBuffer src_buf, VkBuffer dst_buf,
@@ -75,8 +82,11 @@ std::vector<unsigned int> blue_noise_vulkan_impl(
     VkDevice device, VkPhysicalDevice phys_device,
     VkCommandBuffer command_buffer, VkCommandPool command_pool, VkQueue queue,
     VkBuffer pbp_buf, VkPipeline pipeline, VkPipelineLayout pipeline_layout,
-    VkDescriptorSet descriptor_set, VkBuffer filter_out_buf, const int width,
-    const int height);
+    VkDescriptorSet descriptor_set, VkBuffer filter_out_buf,
+    VkPipeline minmax_pipeline, VkPipelineLayout minmax_pipeline_layout,
+    VkDescriptorSet minmax_descriptor_set, VkBuffer max_in_buf,
+    VkBuffer min_in_buf, VkBuffer max_out_buf, VkBuffer min_out_buf,
+    VkBuffer state_buf, const int width, const int height);
 
 std::vector<float> vulkan_buf_to_vec(float *mapped, unsigned int size);
 
@@ -179,6 +189,15 @@ inline bool vulkan_get_filter(
 
   return true;
 }
+
+std::optional<std::pair<int, int>> vulkan_minmax(
+    VkDevice device, VkPhysicalDevice phys_dev, VkCommandBuffer command_buffer,
+    VkCommandPool command_pool, VkQueue queue, VkPipeline minmax_pipeline,
+    VkPipelineLayout minmax_pipeline_layout,
+    VkDescriptorSet minmax_descriptor_set, VkBuffer max_in_buf,
+    VkBuffer min_in_buf, VkBuffer max_out_buf, VkBuffer min_out_buf,
+    VkBuffer state_buf, const int size, const float *const filter_mapped,
+    std::vector<bool> pbp);
 
 #endif
 
