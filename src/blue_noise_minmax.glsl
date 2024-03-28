@@ -47,6 +47,8 @@ void main() {
     }
   } else {
     max_out[index] = max_in[index * 2];
+    max_out[index + 1].pbp = 0;
     min_out[index] = min_in[index * 2];
+    min_out[index + 1].pbp = 1;
   }
 }

@@ -272,7 +272,7 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
     VkBuffer pbp_buf, VkPipeline pipeline, VkPipelineLayout pipeline_layout,
     VkDescriptorSet descriptor_set, VkBuffer filter_out_buf,
     VkPipeline minmax_pipeline, VkPipelineLayout minmax_pipeline_layout,
-    VkDescriptorSet minmax_descriptor_set, VkBuffer max_in_buf,
+    std::array<VkDescriptorSet, 2> minmax_desc_sets, VkBuffer max_in_buf,
     VkBuffer min_in_buf, VkBuffer max_out_buf, VkBuffer min_out_buf,
     VkBuffer state_buf, const int width, const int height) {
   const int size = width * height;
@@ -405,11 +405,11 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
     }
 
     int min, max;
-    auto vulkan_minmax_opt = vulkan_minmax(
-        device, phys_device, command_buffer, command_pool, queue,
-        minmax_pipeline, minmax_pipeline_layout, minmax_descriptor_set,
-        max_in_buf, min_in_buf, max_out_buf, min_out_buf, state_buf, size,
-        filter_mapped_float, pbp);
+    auto vulkan_minmax_opt =
+        vulkan_minmax(device, phys_device, command_buffer, command_pool, queue,
+                      minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets,
+                      max_in_buf, min_in_buf, max_out_buf, min_out_buf,
+                      state_buf, size, filter_mapped_float, pbp);
     if (!vulkan_minmax_opt.has_value()) {
       std::cerr << "Vulkan: vulkan_minmax returned nullopt!\n";
       return {};
@@ -442,11 +442,11 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 
     // get second buffer's min
     int second_min;
-    vulkan_minmax_opt = vulkan_minmax(
-        device, phys_device, command_buffer, command_pool, queue,
-        minmax_pipeline, minmax_pipeline_layout, minmax_descriptor_set,
-        max_in_buf, min_in_buf, max_out_buf, min_out_buf, state_buf, size,
-        filter_mapped_float, pbp);
+    vulkan_minmax_opt =
+        vulkan_minmax(device, phys_device, command_buffer, command_pool, queue,
+                      minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets,
+                      max_in_buf, min_in_buf, max_out_buf, min_out_buf,
+                      state_buf, size, filter_mapped_float, pbp);
     if (!vulkan_minmax_opt.has_value()) {
       std::cerr << "Vulkan: vulkan_minmax returned nullopt!\n";
       return {};
@@ -531,11 +531,11 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
                         global_size, pbp_mapped_int, staging_pbp_buffer,
                         staging_pbp_buffer_mem, staging_filter_buffer_mem,
                         staging_filter_buffer, &changed_indices);
-      auto vulkan_minmax_opt = vulkan_minmax(
-          device, phys_device, command_buffer, command_pool, queue,
-          minmax_pipeline, minmax_pipeline_layout, minmax_descriptor_set,
-          max_in_buf, min_in_buf, max_out_buf, min_out_buf, state_buf, size,
-          filter_mapped_float, pbp);
+      auto vulkan_minmax_opt =
+          vulkan_minmax(device, phys_device, command_buffer, command_pool,
+                        queue, minmax_pipeline, minmax_pipeline_layout,
+                        minmax_desc_sets, max_in_buf, min_in_buf, max_out_buf,
+                        min_out_buf, state_buf, size, filter_mapped_float, pbp);
       if (!vulkan_minmax_opt.has_value()) {
         std::cerr << "Vulkan: vulkan_minmax returned nullopt!\n";
         return {};
@@ -569,11 +569,11 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
                       pbp_mapped_int, staging_pbp_buffer,
                       staging_pbp_buffer_mem, staging_filter_buffer_mem,
                       staging_filter_buffer, &changed_indices);
-    auto vulkan_minmax_opt = vulkan_minmax(
-        device, phys_device, command_buffer, command_pool, queue,
-        minmax_pipeline, minmax_pipeline_layout, minmax_descriptor_set,
-        max_in_buf, min_in_buf, max_out_buf, min_out_buf, state_buf, size,
-        filter_mapped_float, pbp);
+    auto vulkan_minmax_opt =
+        vulkan_minmax(device, phys_device, command_buffer, command_pool, queue,
+                      minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets,
+                      max_in_buf, min_in_buf, max_out_buf, min_out_buf,
+                      state_buf, size, filter_mapped_float, pbp);
     if (!vulkan_minmax_opt.has_value()) {
       std::cerr << "Vulkan: vulkan_minmax returned nullopt!\n";
       return {};
@@ -623,11 +623,11 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
                       pbp_mapped_int, staging_pbp_buffer,
                       staging_pbp_buffer_mem, staging_filter_buffer_mem,
                       staging_filter_buffer, &changed_indices);
-    auto vulkan_minmax_opt = vulkan_minmax(
-        device, phys_device, command_buffer, command_pool, queue,
-        minmax_pipeline, minmax_pipeline_layout, minmax_descriptor_set,
-        max_in_buf, min_in_buf, max_out_buf, min_out_buf, state_buf, size,
-        filter_mapped_float, pbp);
+    auto vulkan_minmax_opt =
+        vulkan_minmax(device, phys_device, command_buffer, command_pool, queue,
+                      minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets,
+                      max_in_buf, min_in_buf, max_out_buf, min_out_buf,
+                      state_buf, size, filter_mapped_float, pbp);
     if (!vulkan_minmax_opt.has_value()) {
       std::cerr << "Vulkan: vulkan_minmax returned nullopt!\n";
       return {};
@@ -677,7 +677,7 @@ std::optional<std::pair<int, int>> dither::internal::vulkan_minmax(
     VkDevice device, VkPhysicalDevice phys_dev, VkCommandBuffer command_buffer,
     VkCommandPool command_pool, VkQueue queue, VkPipeline minmax_pipeline,
     VkPipelineLayout minmax_pipeline_layout,
-    VkDescriptorSet minmax_descriptor_set, VkBuffer max_in_buf,
+    std::array<VkDescriptorSet, 2> minmax_desc_sets, VkBuffer max_in_buf,
     VkBuffer min_in_buf, VkBuffer max_out_buf, VkBuffer min_out_buf,
     VkBuffer state_buf, const int size, const float *const filter_mapped,
     std::vector<bool> pbp) {
@@ -770,25 +770,94 @@ std::optional<std::pair<int, int>> dither::internal::vulkan_minmax(
 
   int current_size = size;
   int next_size;
-  while (current_size > 1) {
-    next_size = (current_size + 1) / 2;
-    vkResetCommandBuffer(command_buffer, 0);
-
+  bool swap = false;
+  vkResetCommandBuffer(command_buffer, 0);
+  {
     VkCommandBufferBeginInfo begin_info{};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-
     if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
       std::clog << "vulkan_minmax ERROR: Failed to begin record compute "
                    "command buffer!\n";
       return std::nullopt;
     }
+  }
+  {
+    VkMemoryBarrier mem_barrier{};
+    mem_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    mem_barrier.srcAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    mem_barrier.dstAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    std::array<VkBufferMemoryBarrier, 4> buf_mem_barriers{};
+    buf_mem_barriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    buf_mem_barriers[0].srcAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    buf_mem_barriers[0].dstAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    buf_mem_barriers[0].srcQueueFamilyIndex = 0;
+    buf_mem_barriers[0].dstQueueFamilyIndex = 0;
+    buf_mem_barriers[0].buffer = max_in_buf;
+    buf_mem_barriers[0].offset = 0;
+    buf_mem_barriers[0].size = VK_WHOLE_SIZE;
+    buf_mem_barriers[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    buf_mem_barriers[1].srcAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    buf_mem_barriers[1].dstAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    buf_mem_barriers[1].srcQueueFamilyIndex = 0;
+    buf_mem_barriers[1].dstQueueFamilyIndex = 0;
+    buf_mem_barriers[1].buffer = min_in_buf;
+    buf_mem_barriers[1].offset = 0;
+    buf_mem_barriers[1].size = VK_WHOLE_SIZE;
+    buf_mem_barriers[2].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    buf_mem_barriers[2].srcAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    buf_mem_barriers[2].dstAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    buf_mem_barriers[2].srcQueueFamilyIndex = 0;
+    buf_mem_barriers[2].dstQueueFamilyIndex = 0;
+    buf_mem_barriers[2].buffer = max_out_buf;
+    buf_mem_barriers[2].offset = 0;
+    buf_mem_barriers[2].size = VK_WHOLE_SIZE;
+    buf_mem_barriers[3].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    buf_mem_barriers[3].srcAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    buf_mem_barriers[3].dstAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    buf_mem_barriers[3].srcQueueFamilyIndex = 0;
+    buf_mem_barriers[3].dstQueueFamilyIndex = 0;
+    buf_mem_barriers[3].buffer = min_out_buf;
+    buf_mem_barriers[3].offset = 0;
+    buf_mem_barriers[3].size = VK_WHOLE_SIZE;
+    while (current_size > 1) {
+      next_size = (current_size + 1) / 2;
 
-    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-                      minmax_pipeline);
-    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-                            minmax_pipeline_layout, 0, 1,
-                            &minmax_descriptor_set, 0, nullptr);
-    vkCmdDispatch(command_buffer, std::ceil((float)next_size / 256.0F), 1, 1);
+      vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                        minmax_pipeline);
+      if (swap) {
+        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                minmax_pipeline_layout, 0, 1,
+                                &minmax_desc_sets[1], 0, nullptr);
+      } else {
+        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                minmax_pipeline_layout, 0, 1,
+                                &minmax_desc_sets[0], 0, nullptr);
+      }
+      vkCmdDispatch(command_buffer, std::ceil((float)next_size / 256.0F), 1, 1);
+
+      if (next_size > 1) {
+        vkCmdPipelineBarrier(
+            command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mem_barrier,
+            buf_mem_barriers.size(), buf_mem_barriers.data(), 0, nullptr);
+      }
+
+      current_size = next_size;
+      swap = !swap;
+    }
+  }
+
+  {
     if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
       std::clog
           << "vulkan_minmax ERROR: Failed to record compute command buffer!\n";
@@ -812,27 +881,19 @@ std::optional<std::pair<int, int>> dither::internal::vulkan_minmax(
       std::clog << "vulkan_minmax ERROR: Failed to vkDeviceWaitIdle!\n";
       return std::nullopt;
     }
-
-    if (next_size > 1) {
-      vulkan_copy_buffer(device, command_pool, queue, max_out_buf, max_in_buf,
-                         next_size * sizeof(FloatAndIndex));
-      vulkan_copy_buffer(device, command_pool, queue, min_out_buf, min_in_buf,
-                         next_size * sizeof(FloatAndIndex));
-
-      fai[0].idx = next_size;
-      std::memcpy(staging_mapped, &fai[0].idx, sizeof(int));
-      vkFlushMappedMemoryRanges(device, 1, &range);
-      vulkan_copy_buffer(device, command_pool, queue, staging_buf, state_buf,
-                         sizeof(int));
-    }
-
-    current_size = next_size;
   }
 
-  vulkan_copy_buffer(device, command_pool, queue, min_out_buf, staging_buf,
-                     sizeof(FloatAndIndex), 0, 0);
-  vulkan_copy_buffer(device, command_pool, queue, max_out_buf, staging_buf,
-                     sizeof(FloatAndIndex), 0, sizeof(FloatAndIndex));
+  if (swap) {
+    vulkan_copy_buffer(device, command_pool, queue, min_out_buf, staging_buf,
+                       sizeof(FloatAndIndex), 0, 0);
+    vulkan_copy_buffer(device, command_pool, queue, max_out_buf, staging_buf,
+                       sizeof(FloatAndIndex), 0, sizeof(FloatAndIndex));
+  } else {
+    vulkan_copy_buffer(device, command_pool, queue, min_in_buf, staging_buf,
+                       sizeof(FloatAndIndex), 0, 0);
+    vulkan_copy_buffer(device, command_pool, queue, max_in_buf, staging_buf,
+                       sizeof(FloatAndIndex), 0, sizeof(FloatAndIndex));
+  }
 
   if (sizeof(FloatAndIndex) * 2 < props.limits.nonCoherentAtomSize) {
     range.size = props.limits.nonCoherentAtomSize;
@@ -1208,7 +1269,7 @@ image::Bl dither::blue_noise(int width, int height, int threads,
           &compute_desc_set_layout);
     }
 
-    VkDescriptorSetLayout minmax_compute_desc_set_layout;
+    std::array<VkDescriptorSetLayout, 2> minmax_desc_set_layouts{};
     utility::Cleanup cleanup_minmax_compute_desc_set_layout{};
     {
       std::array<VkDescriptorSetLayoutBinding, 5> compute_layout_bindings{};
@@ -1253,18 +1314,27 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       layout_info.pBindings = compute_layout_bindings.data();
 
       if (vkCreateDescriptorSetLayout(device, &layout_info, nullptr,
-                                      &minmax_compute_desc_set_layout) !=
+                                      &minmax_desc_set_layouts[0]) !=
           VK_SUCCESS) {
         std::clog << "WARNING: Failed to create compute descriptor set layout "
                      "(minmax)!\n";
         goto ENDOF_VULKAN;
       }
+      if (vkCreateDescriptorSetLayout(device, &layout_info, nullptr,
+                                      &minmax_desc_set_layouts[1]) !=
+          VK_SUCCESS) {
+        std::clog
+            << "WARNING: Failed to create compute descriptor set layout 2 "
+               "(minmax)!\n";
+        goto ENDOF_VULKAN;
+      }
       cleanup_minmax_compute_desc_set_layout = utility::Cleanup(
           [device](void *ptr) {
-            vkDestroyDescriptorSetLayout(
-                device, *((VkDescriptorSetLayout *)ptr), nullptr);
+            auto layouts = (std::array<VkDescriptorSetLayout, 2> *)ptr;
+            vkDestroyDescriptorSetLayout(device, layouts->at(0), nullptr);
+            vkDestroyDescriptorSetLayout(device, layouts->at(1), nullptr);
           },
-          &minmax_compute_desc_set_layout);
+          &minmax_desc_set_layouts);
     }
 
     // Check and compile compute shader.
@@ -1454,8 +1524,8 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       VkPipelineLayoutCreateInfo pipeline_layout_info{};
       pipeline_layout_info.sType =
           VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-      pipeline_layout_info.setLayoutCount = 1;
-      pipeline_layout_info.pSetLayouts = &minmax_compute_desc_set_layout;
+      pipeline_layout_info.setLayoutCount = 2;
+      pipeline_layout_info.pSetLayouts = minmax_desc_set_layouts.data();
 
       if (vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr,
                                  &minmax_compute_pipeline_layout) !=
@@ -1696,7 +1766,8 @@ image::Bl dither::blue_noise(int width, int height, int threads,
             device, phys_device,
             width * height * sizeof(dither::internal::FloatAndIndex),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, max_in_buf, max_in_buf_mem)) {
       std::clog << "WARNING: Failed to create max_in buffer (minmax)!\n";
       goto ENDOF_VULKAN;
@@ -1716,7 +1787,8 @@ image::Bl dither::blue_noise(int width, int height, int threads,
             device, phys_device,
             width * height * sizeof(dither::internal::FloatAndIndex),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, min_in_buf, min_in_buf_mem)) {
       std::clog << "WARNING: Failed to create min_in buffer (minmax)!\n";
       goto ENDOF_VULKAN;
@@ -1825,15 +1897,17 @@ image::Bl dither::blue_noise(int width, int height, int threads,
     VkDescriptorPool minmax_descriptor_pool;
     utility::Cleanup cleanup_minmax_descriptor_pool{};
     {
-      VkDescriptorPoolSize pool_size{};
-      pool_size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-      pool_size.descriptorCount = 5;
+      std::array<VkDescriptorPoolSize, 2> pool_sizes{};
+      pool_sizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      pool_sizes[0].descriptorCount = 5;
+      pool_sizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      pool_sizes[1].descriptorCount = 5;
 
       VkDescriptorPoolCreateInfo pool_info{};
       pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-      pool_info.poolSizeCount = 1;
-      pool_info.pPoolSizes = &pool_size;
-      pool_info.maxSets = 1;
+      pool_info.poolSizeCount = pool_sizes.size();
+      pool_info.pPoolSizes = pool_sizes.data();
+      pool_info.maxSets = 2;
 
       if (vkCreateDescriptorPool(device, &pool_info, nullptr,
                                  &minmax_descriptor_pool) != VK_SUCCESS) {
@@ -1917,16 +1991,16 @@ image::Bl dither::blue_noise(int width, int height, int threads,
                              descriptor_writes.data(), 0, nullptr);
     }
 
-    VkDescriptorSet minmax_compute_descriptor_set;
+    std::array<VkDescriptorSet, 2> minmax_compute_desc_sets;
     {
       VkDescriptorSetAllocateInfo alloc_info{};
       alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
       alloc_info.descriptorPool = minmax_descriptor_pool;
-      alloc_info.descriptorSetCount = 1;
-      alloc_info.pSetLayouts = &minmax_compute_desc_set_layout;
+      alloc_info.descriptorSetCount = 2;
+      alloc_info.pSetLayouts = minmax_desc_set_layouts.data();
 
       if (vkAllocateDescriptorSets(device, &alloc_info,
-                                   &minmax_compute_descriptor_set) !=
+                                   minmax_compute_desc_sets.data()) !=
           VK_SUCCESS) {
         std::clog << "WARNING: Failed to allocate descriptor set (minmax)!\n";
         goto ENDOF_VULKAN;
@@ -1935,7 +2009,7 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       std::array<VkWriteDescriptorSet, 5> descriptor_writes{};
 
       descriptor_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-      descriptor_writes[0].dstSet = minmax_compute_descriptor_set;
+      descriptor_writes[0].dstSet = minmax_compute_desc_sets[0];
       descriptor_writes[0].dstBinding = 0;
       descriptor_writes[0].dstArrayElement = 0;
       descriptor_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -1947,7 +2021,7 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       descriptor_writes[0].pBufferInfo = &max_in_info;
 
       descriptor_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-      descriptor_writes[1].dstSet = minmax_compute_descriptor_set;
+      descriptor_writes[1].dstSet = minmax_compute_desc_sets[0];
       descriptor_writes[1].dstBinding = 1;
       descriptor_writes[1].dstArrayElement = 0;
       descriptor_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -1959,7 +2033,7 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       descriptor_writes[1].pBufferInfo = &min_in_info;
 
       descriptor_writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-      descriptor_writes[2].dstSet = minmax_compute_descriptor_set;
+      descriptor_writes[2].dstSet = minmax_compute_desc_sets[0];
       descriptor_writes[2].dstBinding = 2;
       descriptor_writes[2].dstArrayElement = 0;
       descriptor_writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -1971,7 +2045,7 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       descriptor_writes[2].pBufferInfo = &max_out_info;
 
       descriptor_writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-      descriptor_writes[3].dstSet = minmax_compute_descriptor_set;
+      descriptor_writes[3].dstSet = minmax_compute_desc_sets[0];
       descriptor_writes[3].dstBinding = 3;
       descriptor_writes[3].dstArrayElement = 0;
       descriptor_writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -1983,7 +2057,73 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       descriptor_writes[3].pBufferInfo = &min_out_info;
 
       descriptor_writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-      descriptor_writes[4].dstSet = minmax_compute_descriptor_set;
+      descriptor_writes[4].dstSet = minmax_compute_desc_sets[0];
+      descriptor_writes[4].dstBinding = 4;
+      descriptor_writes[4].dstArrayElement = 0;
+      descriptor_writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      descriptor_writes[4].descriptorCount = 1;
+      VkDescriptorBufferInfo state_info{};
+      state_info.buffer = state_buf;
+      state_info.offset = 0;
+      state_info.range = VK_WHOLE_SIZE;
+      descriptor_writes[4].pBufferInfo = &state_info;
+
+      vkUpdateDescriptorSets(device, descriptor_writes.size(),
+                             descriptor_writes.data(), 0, nullptr);
+    }
+    {
+      std::array<VkWriteDescriptorSet, 5> descriptor_writes{};
+
+      descriptor_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_writes[0].dstSet = minmax_compute_desc_sets[1];
+      descriptor_writes[0].dstBinding = 0;
+      descriptor_writes[0].dstArrayElement = 0;
+      descriptor_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      descriptor_writes[0].descriptorCount = 1;
+      VkDescriptorBufferInfo max_out_info{};
+      max_out_info.buffer = max_out_buf;
+      max_out_info.offset = 0;
+      max_out_info.range = VK_WHOLE_SIZE;
+      descriptor_writes[0].pBufferInfo = &max_out_info;
+
+      descriptor_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_writes[1].dstSet = minmax_compute_desc_sets[1];
+      descriptor_writes[1].dstBinding = 1;
+      descriptor_writes[1].dstArrayElement = 0;
+      descriptor_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      descriptor_writes[1].descriptorCount = 1;
+      VkDescriptorBufferInfo min_out_info{};
+      min_out_info.buffer = min_out_buf;
+      min_out_info.offset = 0;
+      min_out_info.range = VK_WHOLE_SIZE;
+      descriptor_writes[1].pBufferInfo = &min_out_info;
+
+      descriptor_writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_writes[2].dstSet = minmax_compute_desc_sets[1];
+      descriptor_writes[2].dstBinding = 2;
+      descriptor_writes[2].dstArrayElement = 0;
+      descriptor_writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      descriptor_writes[2].descriptorCount = 1;
+      VkDescriptorBufferInfo max_in_info{};
+      max_in_info.buffer = max_in_buf;
+      max_in_info.offset = 0;
+      max_in_info.range = VK_WHOLE_SIZE;
+      descriptor_writes[2].pBufferInfo = &max_in_info;
+
+      descriptor_writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_writes[3].dstSet = minmax_compute_desc_sets[1];
+      descriptor_writes[3].dstBinding = 3;
+      descriptor_writes[3].dstArrayElement = 0;
+      descriptor_writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      descriptor_writes[3].descriptorCount = 1;
+      VkDescriptorBufferInfo min_in_info{};
+      min_in_info.buffer = min_in_buf;
+      min_in_info.offset = 0;
+      min_in_info.range = VK_WHOLE_SIZE;
+      descriptor_writes[3].pBufferInfo = &min_in_info;
+
+      descriptor_writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_writes[4].dstSet = minmax_compute_desc_sets[1];
       descriptor_writes[4].dstBinding = 4;
       descriptor_writes[4].dstArrayElement = 0;
       descriptor_writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -2017,9 +2157,8 @@ image::Bl dither::blue_noise(int width, int height, int threads,
         device, phys_device, command_buffer, command_pool, compute_queue,
         pbp_buf, compute_pipeline, compute_pipeline_layout,
         compute_descriptor_set, filter_out_buf, minmax_compute_pipeline,
-        minmax_compute_pipeline_layout, minmax_compute_descriptor_set,
-        max_in_buf, min_in_buf, max_out_buf, min_out_buf, state_buf, width,
-        height);
+        minmax_compute_pipeline_layout, minmax_compute_desc_sets, max_in_buf,
+        min_in_buf, max_out_buf, min_out_buf, state_buf, width, height);
     if (!result.empty()) {
       return internal::rangeToBl(result, width);
     }
