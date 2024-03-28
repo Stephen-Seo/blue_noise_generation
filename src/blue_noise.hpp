@@ -197,7 +197,7 @@ std::optional<std::pair<int, int>> vulkan_minmax(
     std::array<VkDescriptorSet, 2> minmax_desc_sets, VkBuffer max_in_buf,
     VkBuffer min_in_buf, VkBuffer max_out_buf, VkBuffer min_out_buf,
     VkBuffer state_buf, const int size, const float *const filter_mapped,
-    std::vector<bool> pbp);
+    const std::vector<bool> &pbp);
 
 #endif
 

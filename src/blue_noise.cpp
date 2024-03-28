@@ -680,7 +680,7 @@ std::optional<std::pair<int, int>> dither::internal::vulkan_minmax(
     std::array<VkDescriptorSet, 2> minmax_desc_sets, VkBuffer max_in_buf,
     VkBuffer min_in_buf, VkBuffer max_out_buf, VkBuffer min_out_buf,
     VkBuffer state_buf, const int size, const float *const filter_mapped,
-    std::vector<bool> pbp) {
+    const std::vector<bool> &pbp) {
   // ensure minority pixel is "true"
   unsigned int count = 0;
   for (bool value : pbp) {
@@ -688,17 +688,21 @@ std::optional<std::pair<int, int>> dither::internal::vulkan_minmax(
       ++count;
     }
   }
+  bool flip;
   if (count * 2 >= pbp.size()) {
-    // std::cout << "MINMAX flip\n"; // DEBUG
-    for (unsigned int i = 0; i < pbp.size(); ++i) {
-      pbp[i] = !pbp[i];
-    }
+    flip = true;
+  } else {
+    flip = false;
   }
 
   std::vector<FloatAndIndex> fai(size);
   for (int i = 0; i < size; ++i) {
     fai[i].value = filter_mapped[i];
-    fai[i].pbp = pbp[i] ? 1 : 0;
+    if (flip) {
+      fai[i].pbp = pbp[i] ? 0 : 1;
+    } else {
+      fai[i].pbp = pbp[i] ? 1 : 0;
+    }
     fai[i].idx = i;
   }
 
