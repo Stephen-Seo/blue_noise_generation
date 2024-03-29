@@ -86,7 +86,9 @@ std::vector<unsigned int> blue_noise_vulkan_impl(
     VkPipeline minmax_pipeline, VkPipelineLayout minmax_pipeline_layout,
     std::array<VkDescriptorSet, 2> minmax_descriptor_sets, VkBuffer max_in_buf,
     VkBuffer min_in_buf, VkBuffer max_out_buf, VkBuffer min_out_buf,
-    VkBuffer state_buf, const int width, const int height);
+    VkBuffer state_buf, const int width, const int height,
+    VkBuffer minmax_staging_buf, VkDeviceMemory minmax_staging_buf_mem,
+    void *minmax_mapped);
 
 std::vector<float> vulkan_buf_to_vec(float *mapped, unsigned int size);
 
@@ -197,7 +199,8 @@ std::optional<std::pair<int, int>> vulkan_minmax(
     std::array<VkDescriptorSet, 2> minmax_desc_sets, VkBuffer max_in_buf,
     VkBuffer min_in_buf, VkBuffer max_out_buf, VkBuffer min_out_buf,
     VkBuffer state_buf, const int size, const float *const filter_mapped,
-    const std::vector<bool> &pbp);
+    const std::vector<bool> &pbp, VkBuffer staging_buf,
+    VkDeviceMemory staging_buf_mem, void *staging_mapped);
 
 #endif
 

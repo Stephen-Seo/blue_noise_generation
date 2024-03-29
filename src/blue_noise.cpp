@@ -274,7 +274,9 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
     VkPipeline minmax_pipeline, VkPipelineLayout minmax_pipeline_layout,
     std::array<VkDescriptorSet, 2> minmax_desc_sets, VkBuffer max_in_buf,
     VkBuffer min_in_buf, VkBuffer max_out_buf, VkBuffer min_out_buf,
-    VkBuffer state_buf, const int width, const int height) {
+    VkBuffer state_buf, const int width, const int height,
+    VkBuffer minmax_staging_buf, VkDeviceMemory minmax_staging_buf_mem,
+    void *minmax_mapped) {
   const int size = width * height;
   const int pixel_count = size * 4 / 10;
   const int local_size = 256;
@@ -405,11 +407,12 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
     }
 
     int min, max;
-    auto vulkan_minmax_opt =
-        vulkan_minmax(device, phys_device, command_buffer, command_pool, queue,
-                      minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets,
-                      max_in_buf, min_in_buf, max_out_buf, min_out_buf,
-                      state_buf, size, filter_mapped_float, pbp);
+    auto vulkan_minmax_opt = vulkan_minmax(
+        device, phys_device, command_buffer, command_pool, queue,
+        minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets, max_in_buf,
+        min_in_buf, max_out_buf, min_out_buf, state_buf, size,
+        filter_mapped_float, pbp, minmax_staging_buf, minmax_staging_buf_mem,
+        minmax_mapped);
     if (!vulkan_minmax_opt.has_value()) {
       std::cerr << "Vulkan: vulkan_minmax returned nullopt!\n";
       return {};
@@ -442,11 +445,12 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 
     // get second buffer's min
     int second_min;
-    vulkan_minmax_opt =
-        vulkan_minmax(device, phys_device, command_buffer, command_pool, queue,
-                      minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets,
-                      max_in_buf, min_in_buf, max_out_buf, min_out_buf,
-                      state_buf, size, filter_mapped_float, pbp);
+    vulkan_minmax_opt = vulkan_minmax(
+        device, phys_device, command_buffer, command_pool, queue,
+        minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets, max_in_buf,
+        min_in_buf, max_out_buf, min_out_buf, state_buf, size,
+        filter_mapped_float, pbp, minmax_staging_buf, minmax_staging_buf_mem,
+        minmax_mapped);
     if (!vulkan_minmax_opt.has_value()) {
       std::cerr << "Vulkan: vulkan_minmax returned nullopt!\n";
       return {};
@@ -531,11 +535,12 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
                         global_size, pbp_mapped_int, staging_pbp_buffer,
                         staging_pbp_buffer_mem, staging_filter_buffer_mem,
                         staging_filter_buffer, &changed_indices);
-      auto vulkan_minmax_opt =
-          vulkan_minmax(device, phys_device, command_buffer, command_pool,
-                        queue, minmax_pipeline, minmax_pipeline_layout,
-                        minmax_desc_sets, max_in_buf, min_in_buf, max_out_buf,
-                        min_out_buf, state_buf, size, filter_mapped_float, pbp);
+      auto vulkan_minmax_opt = vulkan_minmax(
+          device, phys_device, command_buffer, command_pool, queue,
+          minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets, max_in_buf,
+          min_in_buf, max_out_buf, min_out_buf, state_buf, size,
+          filter_mapped_float, pbp, minmax_staging_buf, minmax_staging_buf_mem,
+          minmax_mapped);
       if (!vulkan_minmax_opt.has_value()) {
         std::cerr << "Vulkan: vulkan_minmax returned nullopt!\n";
         return {};
@@ -569,11 +574,12 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
                       pbp_mapped_int, staging_pbp_buffer,
                       staging_pbp_buffer_mem, staging_filter_buffer_mem,
                       staging_filter_buffer, &changed_indices);
-    auto vulkan_minmax_opt =
-        vulkan_minmax(device, phys_device, command_buffer, command_pool, queue,
-                      minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets,
-                      max_in_buf, min_in_buf, max_out_buf, min_out_buf,
-                      state_buf, size, filter_mapped_float, pbp);
+    auto vulkan_minmax_opt = vulkan_minmax(
+        device, phys_device, command_buffer, command_pool, queue,
+        minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets, max_in_buf,
+        min_in_buf, max_out_buf, min_out_buf, state_buf, size,
+        filter_mapped_float, pbp, minmax_staging_buf, minmax_staging_buf_mem,
+        minmax_mapped);
     if (!vulkan_minmax_opt.has_value()) {
       std::cerr << "Vulkan: vulkan_minmax returned nullopt!\n";
       return {};
@@ -623,11 +629,12 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
                       pbp_mapped_int, staging_pbp_buffer,
                       staging_pbp_buffer_mem, staging_filter_buffer_mem,
                       staging_filter_buffer, &changed_indices);
-    auto vulkan_minmax_opt =
-        vulkan_minmax(device, phys_device, command_buffer, command_pool, queue,
-                      minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets,
-                      max_in_buf, min_in_buf, max_out_buf, min_out_buf,
-                      state_buf, size, filter_mapped_float, pbp);
+    auto vulkan_minmax_opt = vulkan_minmax(
+        device, phys_device, command_buffer, command_pool, queue,
+        minmax_pipeline, minmax_pipeline_layout, minmax_desc_sets, max_in_buf,
+        min_in_buf, max_out_buf, min_out_buf, state_buf, size,
+        filter_mapped_float, pbp, minmax_staging_buf, minmax_staging_buf_mem,
+        minmax_mapped);
     if (!vulkan_minmax_opt.has_value()) {
       std::cerr << "Vulkan: vulkan_minmax returned nullopt!\n";
       return {};
@@ -680,7 +687,8 @@ std::optional<std::pair<int, int>> dither::internal::vulkan_minmax(
     std::array<VkDescriptorSet, 2> minmax_desc_sets, VkBuffer max_in_buf,
     VkBuffer min_in_buf, VkBuffer max_out_buf, VkBuffer min_out_buf,
     VkBuffer state_buf, const int size, const float *const filter_mapped,
-    const std::vector<bool> &pbp) {
+    const std::vector<bool> &pbp, VkBuffer staging_buf,
+    VkDeviceMemory staging_buf_mem, void *staging_mapped) {
   // ensure minority pixel is "true"
   unsigned int count = 0;
   for (bool value : pbp) {
@@ -706,40 +714,10 @@ std::optional<std::pair<int, int>> dither::internal::vulkan_minmax(
     fai[i].idx = i;
   }
 
-  VkBuffer staging_buf;
-  VkDeviceMemory staging_buf_mem;
-  utility::Cleanup cleanup_staging_buf{};
-  utility::Cleanup cleanup_staging_buf_mem{};
-  void *staging_mapped;
-  utility::Cleanup cleanup_staging_buf_mem_mapped{};
   VkMappedMemoryRange range{};
   VkPhysicalDeviceProperties props;
   vkGetPhysicalDeviceProperties(phys_dev, &props);
   {
-    vulkan_create_buffer(
-        device, phys_dev, size * sizeof(FloatAndIndex),
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
-        staging_buf, staging_buf_mem);
-    cleanup_staging_buf = utility::Cleanup(
-        [device](void *ptr) {
-          vkDestroyBuffer(device, *((VkBuffer *)ptr), nullptr);
-        },
-        &staging_buf);
-    cleanup_staging_buf_mem = utility::Cleanup(
-        [device](void *ptr) {
-          vkFreeMemory(device, *((VkDeviceMemory *)ptr), nullptr);
-        },
-        &staging_buf_mem);
-
-    vkMapMemory(device, staging_buf_mem, 0, size * sizeof(FloatAndIndex), 0,
-                &staging_mapped);
-    cleanup_staging_buf_mem_mapped = utility::Cleanup(
-        [device](void *ptr) {
-          vkUnmapMemory(device, *((VkDeviceMemory *)ptr));
-        },
-        &staging_buf_mem);
     std::memcpy(staging_mapped, fai.data(), size * sizeof(FloatAndIndex));
     range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
     range.memory = staging_buf_mem;
@@ -2155,12 +2133,41 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       }
     }
 
+    VkBuffer minmax_staging_buf;
+    VkDeviceMemory minmax_staging_buf_mem;
+    internal::vulkan_create_buffer(
+        device, phys_device, width * height * sizeof(internal::FloatAndIndex),
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+        minmax_staging_buf, minmax_staging_buf_mem);
+    utility::Cleanup cleanup_minmax_staging_buf(
+        [device](void *ptr) {
+          vkDestroyBuffer(device, *((VkBuffer *)ptr), nullptr);
+        },
+        &minmax_staging_buf);
+    utility::Cleanup cleanup_minmax_staging_buf_mem(
+        [device](void *ptr) {
+          vkFreeMemory(device, *((VkDeviceMemory *)ptr), nullptr);
+        },
+        &minmax_staging_buf_mem);
+    void *minmax_mapped;
+    vkMapMemory(device, minmax_staging_buf_mem, 0,
+                width * height * sizeof(internal::FloatAndIndex), 0,
+                &minmax_mapped);
+    utility::Cleanup cleanup_minmax_mapped(
+        [device](void *ptr) {
+          vkUnmapMemory(device, *((VkDeviceMemory *)ptr));
+        },
+        &minmax_staging_buf_mem);
+
     auto result = dither::internal::blue_noise_vulkan_impl(
         device, phys_device, command_buffer, command_pool, compute_queue,
         pbp_buf, compute_pipeline, compute_pipeline_layout,
         compute_descriptor_set, filter_out_buf, minmax_compute_pipeline,
         minmax_compute_pipeline_layout, minmax_compute_desc_sets, max_in_buf,
-        min_in_buf, max_out_buf, min_out_buf, state_buf, width, height);
+        min_in_buf, max_out_buf, min_out_buf, state_buf, width, height,
+        minmax_staging_buf, minmax_staging_buf_mem, minmax_mapped);
     if (!result.empty()) {
       return internal::rangeToBl(result, width);
     }
