@@ -1810,8 +1810,7 @@ image::Bl dither::blue_noise(int width, int height, int threads,
 
     if (!internal::vulkan_create_buffer(
             device, phys_device,
-            ((width * height + 1) / 2) *
-                sizeof(dither::internal::FloatAndIndex),
+            width * height * sizeof(dither::internal::FloatAndIndex),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, min_out_buf,
@@ -1832,8 +1831,7 @@ image::Bl dither::blue_noise(int width, int height, int threads,
 
     if (!internal::vulkan_create_buffer(
             device, phys_device,
-            ((width * height + 1) / 2) *
-                sizeof(dither::internal::FloatAndIndex),
+            width * height * sizeof(dither::internal::FloatAndIndex),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, max_out_buf,
