@@ -519,6 +519,95 @@ std::vector<float> dither::internal::vulkan_buf_to_vec(float *mapped,
 
 image::Bl dither::blue_noise(int width, int height, int threads,
                              bool use_opencl, bool use_vulkan) {
+#if DITHERING_OPENCL_ENABLED == 1
+  if (use_opencl) {
+    // try to use OpenCL
+    do {
+      cl_device_id device;
+      cl_context context;
+      cl_program program;
+      cl_int err;
+
+      cl_platform_id platform;
+
+      int filter_size = (width + height) / 2;
+
+      err = clGetPlatformIDs(1, &platform, nullptr);
+      if (err != CL_SUCCESS) {
+        std::cerr << "OpenCL: Failed to identify a platform\n";
+        break;
+      }
+
+      err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, nullptr);
+      if (err != CL_SUCCESS) {
+        std::cerr << "OpenCL: Failed to get a device\n";
+        break;
+      }
+
+      context = clCreateContext(nullptr, 1, &device, nullptr, nullptr, &err);
+
+      {
+        char buf[1024];
+        std::ifstream program_file("src/blue_noise.cl");
+        if (!program_file.good()) {
+          std::cerr << "ERROR: Failed to read \"src/blue_noise.cl\" "
+                       "(not found?)\n";
+          break;
+        }
+        std::string program_string;
+        while (program_file.good()) {
+          program_file.read(buf, 1024);
+          if (int read_count = program_file.gcount(); read_count > 0) {
+            program_string.append(buf, read_count);
+          }
+        }
+
+        const char *string_ptr = program_string.c_str();
+        std::size_t program_size = program_string.size();
+        program = clCreateProgramWithSource(
+            context, 1, (const char **)&string_ptr, &program_size, &err);
+        if (err != CL_SUCCESS) {
+          std::cerr << "OpenCL: Failed to create the program\n";
+          clReleaseContext(context);
+          break;
+        }
+
+        err = clBuildProgram(program, 1, &device, nullptr, nullptr, nullptr);
+        if (err != CL_SUCCESS) {
+          std::cerr << "OpenCL: Failed to build the program\n";
+
+          std::size_t log_size;
+          clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0,
+                                nullptr, &log_size);
+          std::unique_ptr<char[]> log = std::make_unique<char[]>(log_size + 1);
+          log[log_size] = 0;
+          clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, log_size,
+                                log.get(), nullptr);
+          std::cerr << log.get() << std::endl;
+
+          clReleaseProgram(program);
+          clReleaseContext(context);
+          break;
+        }
+      }
+
+      std::cout << "OpenCL: Initialized, trying cl_impl..." << std::endl;
+      std::vector<unsigned int> result = internal::blue_noise_cl_impl(
+          width, height, filter_size, context, device, program);
+
+      clReleaseProgram(program);
+      clReleaseContext(context);
+
+      if (!result.empty()) {
+        return internal::rangeToBl(result, width);
+      }
+      std::cout << "ERROR: Empty result\n";
+    } while (false);
+  }
+#else
+  std::clog << "WARNING: Not compiled with OpenCL support!\n";
+#endif
+
 #if DITHERING_VULKAN_ENABLED == 1
   if (use_vulkan) {
     // Try to use Vulkan.
@@ -1211,95 +1300,6 @@ ENDOF_VULKAN:
 #else
   std::clog << "WARNING: Not compiled with Vulkan support!\n";
 #endif  // DITHERING_VULKAN_ENABLED == 1
-
-#if DITHERING_OPENCL_ENABLED == 1
-  if (use_opencl) {
-    // try to use OpenCL
-    do {
-      cl_device_id device;
-      cl_context context;
-      cl_program program;
-      cl_int err;
-
-      cl_platform_id platform;
-
-      int filter_size = (width + height) / 2;
-
-      err = clGetPlatformIDs(1, &platform, nullptr);
-      if (err != CL_SUCCESS) {
-        std::cerr << "OpenCL: Failed to identify a platform\n";
-        break;
-      }
-
-      err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, nullptr);
-      if (err != CL_SUCCESS) {
-        std::cerr << "OpenCL: Failed to get a device\n";
-        break;
-      }
-
-      context = clCreateContext(nullptr, 1, &device, nullptr, nullptr, &err);
-
-      {
-        char buf[1024];
-        std::ifstream program_file("src/blue_noise.cl");
-        if (!program_file.good()) {
-          std::cerr << "ERROR: Failed to read \"src/blue_noise.cl\" "
-                       "(not found?)\n";
-          break;
-        }
-        std::string program_string;
-        while (program_file.good()) {
-          program_file.read(buf, 1024);
-          if (int read_count = program_file.gcount(); read_count > 0) {
-            program_string.append(buf, read_count);
-          }
-        }
-
-        const char *string_ptr = program_string.c_str();
-        std::size_t program_size = program_string.size();
-        program = clCreateProgramWithSource(
-            context, 1, (const char **)&string_ptr, &program_size, &err);
-        if (err != CL_SUCCESS) {
-          std::cerr << "OpenCL: Failed to create the program\n";
-          clReleaseContext(context);
-          break;
-        }
-
-        err = clBuildProgram(program, 1, &device, nullptr, nullptr, nullptr);
-        if (err != CL_SUCCESS) {
-          std::cerr << "OpenCL: Failed to build the program\n";
-
-          std::size_t log_size;
-          clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0,
-                                nullptr, &log_size);
-          std::unique_ptr<char[]> log = std::make_unique<char[]>(log_size + 1);
-          log[log_size] = 0;
-          clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, log_size,
-                                log.get(), nullptr);
-          std::cerr << log.get() << std::endl;
-
-          clReleaseProgram(program);
-          clReleaseContext(context);
-          break;
-        }
-      }
-
-      std::cout << "OpenCL: Initialized, trying cl_impl..." << std::endl;
-      std::vector<unsigned int> result = internal::blue_noise_cl_impl(
-          width, height, filter_size, context, device, program);
-
-      clReleaseProgram(program);
-      clReleaseContext(context);
-
-      if (!result.empty()) {
-        return internal::rangeToBl(result, width);
-      }
-      std::cout << "ERROR: Empty result\n";
-    } while (false);
-  }
-#else
-  std::clog << "WARNING: Not compiled with OpenCL support!\n";
-#endif
 
   std::cout << "Vulkan/OpenCL: Failed to setup/use or is not enabled, using "
                "regular impl..."
