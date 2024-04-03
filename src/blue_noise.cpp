@@ -124,7 +124,8 @@ bool dither::internal::vulkan_create_buffer(
 void dither::internal::vulkan_copy_buffer(VkDevice device,
                                           VkCommandPool command_pool,
                                           VkQueue queue, VkBuffer src_buf,
-                                          VkBuffer dst_buf, VkDeviceSize size) {
+                                          VkBuffer dst_buf, VkDeviceSize size,
+                                          VkDeviceSize offset) {
   VkCommandBufferAllocateInfo alloc_info{};
   alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
   alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -142,7 +143,52 @@ void dither::internal::vulkan_copy_buffer(VkDevice device,
 
   VkBufferCopy copy_region{};
   copy_region.size = size;
+  copy_region.srcOffset = offset;
+  copy_region.dstOffset = offset;
   vkCmdCopyBuffer(command_buf, src_buf, dst_buf, 1, &copy_region);
+
+  vkEndCommandBuffer(command_buf);
+
+  VkSubmitInfo submit_info{};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &command_buf;
+
+  vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+  vkQueueWaitIdle(queue);
+
+  vkFreeCommandBuffers(device, command_pool, 1, &command_buf);
+}
+
+void dither::internal::vulkan_copy_buffer_pieces(
+    VkDevice device, VkCommandPool command_pool, VkQueue queue,
+    VkBuffer src_buf, VkBuffer dst_buf,
+    const std::vector<std::tuple<VkDeviceSize, VkDeviceSize>> &pieces) {
+  VkCommandBufferAllocateInfo alloc_info{};
+  alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  alloc_info.commandPool = command_pool;
+  alloc_info.commandBufferCount = 1;
+
+  VkCommandBuffer command_buf;
+  vkAllocateCommandBuffers(device, &alloc_info, &command_buf);
+
+  VkCommandBufferBeginInfo begin_info{};
+  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkBeginCommandBuffer(command_buf, &begin_info);
+
+  std::vector<VkBufferCopy> regions;
+  for (auto tuple : pieces) {
+    VkBufferCopy copy_region{};
+    copy_region.size = std::get<0>(tuple);
+    copy_region.srcOffset = std::get<1>(tuple);
+    copy_region.dstOffset = std::get<1>(tuple);
+    regions.push_back(copy_region);
+  }
+  vkCmdCopyBuffer(command_buf, src_buf, dst_buf, regions.size(),
+                  regions.data());
 
   vkEndCommandBuffer(command_buf);
 
@@ -167,6 +213,40 @@ void dither::internal::vulkan_flush_buffer(VkDevice device,
   range.size = VK_WHOLE_SIZE;
 
   if (vkFlushMappedMemoryRanges(device, 1, &range) != VK_SUCCESS) {
+    std::clog << "WARNING: vulkan_flush_buffer failed!\n";
+  }
+}
+
+void dither::internal::vulkan_flush_buffer_pieces(
+    VkDevice device, const VkDeviceSize phys_atom_size, VkDeviceMemory memory,
+    const std::vector<std::tuple<VkDeviceSize, VkDeviceSize>> &pieces) {
+  std::vector<VkMappedMemoryRange> ranges;
+  for (auto tuple : pieces) {
+    VkMappedMemoryRange range{};
+    range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    range.pNext = nullptr;
+    range.memory = memory;
+    range.offset = std::get<1>(tuple);
+    range.size = std::get<0>(tuple);
+
+    // TODO dynamically handle multiple pieces for more efficient flushes.
+    // This may not be necessary if pieces is always size 1.
+
+    if (range.offset % phys_atom_size != 0) {
+      range.offset = (range.offset / phys_atom_size) * phys_atom_size;
+    }
+
+    if (range.size < phys_atom_size) {
+      range.size = phys_atom_size;
+    } else if (range.size % phys_atom_size != 0) {
+      range.size = (range.size / phys_atom_size) * phys_atom_size;
+    }
+
+    ranges.push_back(range);
+  }
+
+  if (vkFlushMappedMemoryRanges(device, ranges.size(), ranges.data()) !=
+      VK_SUCCESS) {
     std::clog << "WARNING: vulkan_flush_buffer failed!\n";
   }
 }
@@ -258,6 +338,15 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
       &staging_filter_buffer_mem);
   float *filter_mapped_float = (float *)filter_mapped;
 
+  std::vector<std::size_t> changed_indices;
+
+  VkDeviceSize phys_atom_size;
+  {
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(phys_device, &props);
+    phys_atom_size = props.limits.nonCoherentAtomSize;
+  }
+
   {
 #ifndef NDEBUG
     printf("Inserting %d pixels into image of max count %d\n", pixel_count,
@@ -276,12 +365,12 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 #endif
   }
 
-  if (!vulkan_get_filter(device, command_buffer, command_pool, queue, pbp_buf,
-                         pipeline, pipeline_layout, descriptor_set,
-                         filter_out_buf, size, pbp, reversed_pbp, global_size,
-                         pbp_mapped_int, staging_pbp_buffer,
-                         staging_pbp_buffer_mem, staging_filter_buffer_mem,
-                         staging_filter_buffer)) {
+  if (!vulkan_get_filter(
+          device, phys_atom_size, command_buffer, command_pool, queue, pbp_buf,
+          pipeline, pipeline_layout, descriptor_set, filter_out_buf, size, pbp,
+          reversed_pbp, global_size, pbp_mapped_int, staging_pbp_buffer,
+          staging_pbp_buffer_mem, staging_filter_buffer_mem,
+          staging_filter_buffer, nullptr)) {
     std::cerr << "Vulkan: Failed to execute get_filter at start!\n";
   } else {
 #ifndef NDEBUG
@@ -300,12 +389,13 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
     printf("Iteration %d\n", ++iterations);
 #endif
 
-    if (!vulkan_get_filter(device, command_buffer, command_pool, queue, pbp_buf,
-                           pipeline, pipeline_layout, descriptor_set,
-                           filter_out_buf, size, pbp, reversed_pbp, global_size,
-                           pbp_mapped_int, staging_pbp_buffer,
-                           staging_pbp_buffer_mem, staging_filter_buffer_mem,
-                           staging_filter_buffer)) {
+    if (!vulkan_get_filter(device, phys_atom_size, command_buffer, command_pool,
+                           queue, pbp_buf, pipeline, pipeline_layout,
+                           descriptor_set, filter_out_buf, size, pbp,
+                           reversed_pbp, global_size, pbp_mapped_int,
+                           staging_pbp_buffer, staging_pbp_buffer_mem,
+                           staging_filter_buffer_mem, staging_filter_buffer,
+                           &changed_indices)) {
       std::cerr << "Vulkan: Failed to execute do_filter\n";
       break;
     }
@@ -316,12 +406,15 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 
     pbp[max] = false;
 
-    if (!vulkan_get_filter(device, command_buffer, command_pool, queue, pbp_buf,
-                           pipeline, pipeline_layout, descriptor_set,
-                           filter_out_buf, size, pbp, reversed_pbp, global_size,
-                           pbp_mapped_int, staging_pbp_buffer,
-                           staging_pbp_buffer_mem, staging_filter_buffer_mem,
-                           staging_filter_buffer)) {
+    changed_indices.push_back(max);
+
+    if (!vulkan_get_filter(device, phys_atom_size, command_buffer, command_pool,
+                           queue, pbp_buf, pipeline, pipeline_layout,
+                           descriptor_set, filter_out_buf, size, pbp,
+                           reversed_pbp, global_size, pbp_mapped_int,
+                           staging_pbp_buffer, staging_pbp_buffer_mem,
+                           staging_filter_buffer_mem, staging_filter_buffer,
+                           &changed_indices)) {
       std::cerr << "Vulkan: Failed to execute do_filter\n";
       break;
     }
@@ -333,9 +426,11 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 
     if (second_min == max) {
       pbp[max] = true;
+      changed_indices.push_back(max);
       break;
     } else {
       pbp[second_min] = true;
+      changed_indices.push_back(second_min);
     }
 
 #ifndef NDEBUG
@@ -357,12 +452,12 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 #endif
   }
 
-  if (!vulkan_get_filter(device, command_buffer, command_pool, queue, pbp_buf,
-                         pipeline, pipeline_layout, descriptor_set,
-                         filter_out_buf, size, pbp, reversed_pbp, global_size,
-                         pbp_mapped_int, staging_pbp_buffer,
-                         staging_pbp_buffer_mem, staging_filter_buffer_mem,
-                         staging_filter_buffer)) {
+  if (!vulkan_get_filter(
+          device, phys_atom_size, command_buffer, command_pool, queue, pbp_buf,
+          pipeline, pipeline_layout, descriptor_set, filter_out_buf, size, pbp,
+          reversed_pbp, global_size, pbp_mapped_int, staging_pbp_buffer,
+          staging_pbp_buffer_mem, staging_filter_buffer_mem,
+          staging_filter_buffer, &changed_indices)) {
     std::cerr << "Vulkan: Failed to execute do_filter (at end)\n";
   } else {
 #ifndef NDEBUG
@@ -401,16 +496,17 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 #ifndef NDEBUG
       std::cout << i << ' ';
 #endif
-      vulkan_get_filter(device, command_buffer, command_pool, queue, pbp_buf,
-                        pipeline, pipeline_layout, descriptor_set,
-                        filter_out_buf, size, pbp, reversed_pbp, global_size,
-                        pbp_mapped_int, staging_pbp_buffer,
+      vulkan_get_filter(device, phys_atom_size, command_buffer, command_pool,
+                        queue, pbp_buf, pipeline, pipeline_layout,
+                        descriptor_set, filter_out_buf, size, pbp, reversed_pbp,
+                        global_size, pbp_mapped_int, staging_pbp_buffer,
                         staging_pbp_buffer_mem, staging_filter_buffer_mem,
-                        staging_filter_buffer);
+                        staging_filter_buffer, &changed_indices);
       std::tie(std::ignore, max) =
           internal::filter_minmax_raw_array(filter_mapped_float, size, pbp);
       pbp.at(max) = false;
       dither_array.at(max) = i;
+      changed_indices.push_back(max);
 #ifndef NDEBUG
       if (set.find(max) != set.end()) {
         std::cout << "\nWARNING: Reusing index " << max << '\n';
@@ -430,15 +526,17 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 #ifndef NDEBUG
     std::cout << i << ' ';
 #endif
-    vulkan_get_filter(device, command_buffer, command_pool, queue, pbp_buf,
-                      pipeline, pipeline_layout, descriptor_set, filter_out_buf,
-                      size, pbp, reversed_pbp, global_size, pbp_mapped_int,
-                      staging_pbp_buffer, staging_pbp_buffer_mem,
-                      staging_filter_buffer_mem, staging_filter_buffer);
+    vulkan_get_filter(device, phys_atom_size, command_buffer, command_pool,
+                      queue, pbp_buf, pipeline, pipeline_layout, descriptor_set,
+                      filter_out_buf, size, pbp, reversed_pbp, global_size,
+                      pbp_mapped_int, staging_pbp_buffer,
+                      staging_pbp_buffer_mem, staging_filter_buffer_mem,
+                      staging_filter_buffer, &changed_indices);
     std::tie(min, std::ignore) =
         internal::filter_minmax_raw_array(filter_mapped_float, size, pbp);
     pbp.at(min) = true;
     dither_array.at(min) = i;
+    changed_indices.push_back(min);
 #ifndef NDEBUG
     if (set.find(min) != set.end()) {
       std::cout << "\nWARNING: Reusing index " << min << '\n';
@@ -451,11 +549,12 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
   {
     image::Bl min_pixels = internal::rangeToBl(dither_array, width);
     min_pixels.writeToFile(image::file_type::PNG, true, "da_mid_pixels.png");
-    vulkan_get_filter(device, command_buffer, command_pool, queue, pbp_buf,
-                      pipeline, pipeline_layout, descriptor_set, filter_out_buf,
-                      size, pbp, reversed_pbp, global_size, pbp_mapped_int,
-                      staging_pbp_buffer, staging_pbp_buffer_mem,
-                      staging_filter_buffer_mem, staging_filter_buffer);
+    vulkan_get_filter(device, phys_atom_size, command_buffer, command_pool,
+                      queue, pbp_buf, pipeline, pipeline_layout, descriptor_set,
+                      filter_out_buf, size, pbp, reversed_pbp, global_size,
+                      pbp_mapped_int, staging_pbp_buffer,
+                      staging_pbp_buffer_mem, staging_filter_buffer_mem,
+                      staging_filter_buffer, &changed_indices);
     internal::write_filter(vulkan_buf_to_vec(filter_mapped_float, size), width,
                            "filter_mid.pgm");
     image::Bl pbp_image = toBl(pbp, width);
@@ -464,19 +563,26 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 #endif
   std::cout << "\nRanking last half of pixels...\n";
   reversed_pbp = true;
+  bool first_reversed_run = true;
   for (unsigned int i = (size + 1) / 2; i < (unsigned int)size; ++i) {
 #ifndef NDEBUG
     std::cout << i << ' ';
 #endif
-    vulkan_get_filter(device, command_buffer, command_pool, queue, pbp_buf,
-                      pipeline, pipeline_layout, descriptor_set, filter_out_buf,
-                      size, pbp, reversed_pbp, global_size, pbp_mapped_int,
-                      staging_pbp_buffer, staging_pbp_buffer_mem,
-                      staging_filter_buffer_mem, staging_filter_buffer);
+    if (first_reversed_run) {
+      changed_indices.clear();
+      first_reversed_run = false;
+    }
+    vulkan_get_filter(device, phys_atom_size, command_buffer, command_pool,
+                      queue, pbp_buf, pipeline, pipeline_layout, descriptor_set,
+                      filter_out_buf, size, pbp, reversed_pbp, global_size,
+                      pbp_mapped_int, staging_pbp_buffer,
+                      staging_pbp_buffer_mem, staging_filter_buffer_mem,
+                      staging_filter_buffer, &changed_indices);
     std::tie(std::ignore, max) =
         internal::filter_minmax_raw_array(filter_mapped_float, size, pbp);
     pbp.at(max) = true;
     dither_array.at(max) = i;
+    changed_indices.push_back(max);
 #ifndef NDEBUG
     if (set.find(max) != set.end()) {
       std::cout << "\nWARNING: Reusing index " << max << '\n';
@@ -489,11 +595,12 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 
 #ifndef NDEBUG
   {
-    vulkan_get_filter(device, command_buffer, command_pool, queue, pbp_buf,
-                      pipeline, pipeline_layout, descriptor_set, filter_out_buf,
-                      size, pbp, reversed_pbp, global_size, pbp_mapped_int,
-                      staging_pbp_buffer, staging_pbp_buffer_mem,
-                      staging_filter_buffer_mem, staging_filter_buffer);
+    vulkan_get_filter(device, phys_atom_size, command_buffer, command_pool,
+                      queue, pbp_buf, pipeline, pipeline_layout, descriptor_set,
+                      filter_out_buf, size, pbp, reversed_pbp, global_size,
+                      pbp_mapped_int, staging_pbp_buffer,
+                      staging_pbp_buffer_mem, staging_filter_buffer_mem,
+                      staging_filter_buffer, nullptr);
     internal::write_filter(vulkan_buf_to_vec(filter_mapped_float, size), width,
                            "filter_after.pgm");
     image::Bl pbp_image = toBl(pbp, width);

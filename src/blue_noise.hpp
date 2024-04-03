@@ -21,6 +21,7 @@
 #include <random>
 #include <stdexcept>
 #include <thread>
+#include <tuple>
 #include <unordered_set>
 #include <vector>
 
@@ -58,9 +59,16 @@ bool vulkan_create_buffer(VkDevice device, VkPhysicalDevice phys_dev,
 
 void vulkan_copy_buffer(VkDevice device, VkCommandPool command_pool,
                         VkQueue queue, VkBuffer src_buf, VkBuffer dst_buf,
-                        VkDeviceSize size);
+                        VkDeviceSize size, VkDeviceSize offset = 0);
+void vulkan_copy_buffer_pieces(
+    VkDevice device, VkCommandPool command_pool, VkQueue queue,
+    VkBuffer src_buf, VkBuffer dst_buf,
+    const std::vector<std::tuple<VkDeviceSize, VkDeviceSize> > &pieces);
 
 void vulkan_flush_buffer(VkDevice device, VkDeviceMemory memory);
+void vulkan_flush_buffer_pieces(
+    VkDevice device, const VkDeviceSize phys_atom_size, VkDeviceMemory memory,
+    const std::vector<std::tuple<VkDeviceSize, VkDeviceSize> > &pieces);
 void vulkan_invalidate_buffer(VkDevice device, VkDeviceMemory memory);
 
 std::vector<unsigned int> blue_noise_vulkan_impl(
@@ -73,30 +81,57 @@ std::vector<unsigned int> blue_noise_vulkan_impl(
 std::vector<float> vulkan_buf_to_vec(float *mapped, unsigned int size);
 
 inline bool vulkan_get_filter(
-    VkDevice device, VkCommandBuffer command_buffer, VkCommandPool command_pool,
-    VkQueue queue, VkBuffer pbp_buf, VkPipeline pipeline,
-    VkPipelineLayout pipeline_layout, VkDescriptorSet descriptor_set,
-    VkBuffer filter_out_buf, const int size, std::vector<bool> &pbp,
-    bool reversed_pbp, const std::size_t global_size, int *pbp_mapped_int,
-    VkBuffer staging_pbp_buffer, VkDeviceMemory staging_pbp_buffer_mem,
-    VkDeviceMemory staging_filter_buffer_mem, VkBuffer staging_filter_buffer) {
+    VkDevice device, const VkDeviceSize phys_atom_size,
+    VkCommandBuffer command_buffer, VkCommandPool command_pool, VkQueue queue,
+    VkBuffer pbp_buf, VkPipeline pipeline, VkPipelineLayout pipeline_layout,
+    VkDescriptorSet descriptor_set, VkBuffer filter_out_buf, const int size,
+    std::vector<bool> &pbp, bool reversed_pbp, const std::size_t global_size,
+    int *pbp_mapped_int, VkBuffer staging_pbp_buffer,
+    VkDeviceMemory staging_pbp_buffer_mem,
+    VkDeviceMemory staging_filter_buffer_mem, VkBuffer staging_filter_buffer,
+    std::vector<std::size_t> *changed) {
   vkResetCommandBuffer(command_buffer, 0);
 
-  if (reversed_pbp) {
-    for (unsigned int i = 0; i < pbp.size(); ++i) {
-      pbp_mapped_int[i] = pbp[i] ? 0 : 1;
+  if (changed != nullptr && changed->size() > 0) {
+    if (reversed_pbp) {
+      for (auto idx : *changed) {
+        pbp_mapped_int[idx] = pbp[idx] ? 0 : 1;
+      }
+    } else {
+      for (auto idx : *changed) {
+        pbp_mapped_int[idx] = pbp[idx] ? 1 : 0;
+      }
     }
   } else {
-    for (unsigned int i = 0; i < pbp.size(); ++i) {
-      pbp_mapped_int[i] = pbp[i] ? 1 : 0;
+    if (reversed_pbp) {
+      for (unsigned int i = 0; i < pbp.size(); ++i) {
+        pbp_mapped_int[i] = pbp[i] ? 0 : 1;
+      }
+    } else {
+      for (unsigned int i = 0; i < pbp.size(); ++i) {
+        pbp_mapped_int[i] = pbp[i] ? 1 : 0;
+      }
     }
   }
 
-  vulkan_flush_buffer(device, staging_pbp_buffer_mem);
-
   // Copy pbp buffer.
-  vulkan_copy_buffer(device, command_pool, queue, staging_pbp_buffer, pbp_buf,
-                     size * sizeof(int));
+  if (changed != nullptr && changed->size() > 0) {
+    std::vector<std::tuple<VkDeviceSize, VkDeviceSize> > pieces;
+    for (auto idx : *changed) {
+      pieces.emplace_back(std::make_tuple(sizeof(int), idx * sizeof(int)));
+    }
+
+    vulkan_flush_buffer_pieces(device, phys_atom_size, staging_pbp_buffer_mem,
+                               pieces);
+
+    vulkan_copy_buffer_pieces(device, command_pool, queue, staging_pbp_buffer,
+                              pbp_buf, pieces);
+    changed->clear();
+  } else {
+    vulkan_flush_buffer(device, staging_pbp_buffer_mem);
+    vulkan_copy_buffer(device, command_pool, queue, staging_pbp_buffer, pbp_buf,
+                       size * sizeof(int));
+  }
 
   VkCommandBufferBeginInfo begin_info{};
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
