@@ -74,9 +74,10 @@ void vulkan_invalidate_buffer(VkDevice device, VkDeviceMemory memory);
 std::vector<unsigned int> blue_noise_vulkan_impl(
     VkDevice device, VkPhysicalDevice phys_device,
     VkCommandBuffer command_buffer, VkCommandPool command_pool, VkQueue queue,
-    VkBuffer pbp_buf, VkPipeline pipeline, VkPipelineLayout pipeline_layout,
-    VkDescriptorSet descriptor_set, VkBuffer filter_out_buf, const int width,
-    const int height);
+    VkBuffer pbp_buf, VkDeviceMemory pbp_buf_mem, VkPipeline pipeline,
+    VkPipelineLayout pipeline_layout, VkDescriptorSet descriptor_set,
+    VkBuffer filter_out_buf, VkDeviceMemory filter_out_buf_mem, const int width,
+    const int height, bool buffers_device_and_host_visible);
 
 std::vector<float> vulkan_buf_to_vec(float *mapped, unsigned int size);
 
@@ -178,6 +179,102 @@ inline bool vulkan_get_filter(
   vulkan_invalidate_buffer(device, staging_filter_buffer_mem);
 
   return true;
+}
+
+inline bool vulkan_get_filter_buffers_device_host_visible(
+    VkDevice device, VkCommandBuffer command_buffer, VkQueue queue,
+    VkPipeline pipeline, VkPipelineLayout pipeline_layout,
+    VkDescriptorSet descriptor_set, std::vector<bool> &pbp, bool reversed_pbp,
+    const std::size_t global_size, int *pbp_mapped_int,
+    std::vector<std::size_t> *changed) {
+  vkResetCommandBuffer(command_buffer, 0);
+
+  if (changed != nullptr && changed->size() > 0) {
+    if (reversed_pbp) {
+      for (auto idx : *changed) {
+        pbp_mapped_int[idx] = pbp[idx] ? 0 : 1;
+      }
+    } else {
+      for (auto idx : *changed) {
+        pbp_mapped_int[idx] = pbp[idx] ? 1 : 0;
+      }
+    }
+  } else {
+    if (reversed_pbp) {
+      for (unsigned int i = 0; i < pbp.size(); ++i) {
+        pbp_mapped_int[i] = pbp[i] ? 0 : 1;
+      }
+    } else {
+      for (unsigned int i = 0; i < pbp.size(); ++i) {
+        pbp_mapped_int[i] = pbp[i] ? 1 : 0;
+      }
+    }
+  }
+
+  VkCommandBufferBeginInfo begin_info{};
+  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+  if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
+    std::clog << "get_filter ERROR: Failed to begin recording compute "
+                 "command buffer!\n";
+    return false;
+  }
+
+  vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+  vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                          pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
+  vkCmdDispatch(command_buffer, global_size, 1, 1);
+  if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
+    std::clog << "get_filter ERROR: Failed to record compute command buffer!\n";
+    return false;
+  }
+
+  {
+    VkSubmitInfo submit_info{};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
+    submit_info.signalSemaphoreCount = 0;
+    submit_info.pSignalSemaphores = nullptr;
+
+    if (vkQueueSubmit(queue, 1, &submit_info, nullptr) != VK_SUCCESS) {
+      std::clog
+          << "get_filter ERROR: Failed to submit compute command buffer!\n";
+      return false;
+    }
+  }
+
+  if (vkDeviceWaitIdle(device) != VK_SUCCESS) {
+    std::clog << "get_filter ERROR: Failed to vkDeviceWaitIdle!\n";
+    return false;
+  }
+
+  return true;
+}
+
+inline bool vulkan_get_filter_pick(
+    VkDevice device, const VkDeviceSize phys_atom_size,
+    VkCommandBuffer command_buffer, VkCommandPool command_pool, VkQueue queue,
+    VkBuffer pbp_buf, VkPipeline pipeline, VkPipelineLayout pipeline_layout,
+    VkDescriptorSet descriptor_set, VkBuffer filter_out_buf, const int size,
+    std::vector<bool> &pbp, bool reversed_pbp, const std::size_t global_size,
+    int *pbp_mapped_int, VkBuffer staging_pbp_buffer,
+    VkDeviceMemory staging_pbp_buffer_mem,
+    VkDeviceMemory staging_filter_buffer_mem, VkBuffer staging_filter_buffer,
+    std::vector<std::size_t> *changed, bool buffers_device_and_host_visible) {
+  if (buffers_device_and_host_visible) {
+    return vulkan_get_filter_buffers_device_host_visible(
+        device, command_buffer, queue, pipeline, pipeline_layout,
+        descriptor_set, pbp, reversed_pbp, global_size, pbp_mapped_int,
+        changed);
+  } else {
+    return vulkan_get_filter(
+        device, phys_atom_size, command_buffer, command_pool, queue, pbp_buf,
+        pipeline, pipeline_layout, descriptor_set, filter_out_buf, size, pbp,
+        reversed_pbp, global_size, pbp_mapped_int, staging_pbp_buffer,
+        staging_pbp_buffer_mem, staging_filter_buffer_mem,
+        staging_filter_buffer, changed);
+  }
 }
 
 #endif
