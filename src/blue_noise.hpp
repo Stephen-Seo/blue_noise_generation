@@ -70,12 +70,12 @@ void vulkan_copy_buffer(VkDevice device, VkCommandPool command_pool,
 void vulkan_copy_buffer_pieces(
     VkDevice device, VkCommandPool command_pool, VkQueue queue,
     VkBuffer src_buf, VkBuffer dst_buf,
-    const std::vector<std::tuple<VkDeviceSize, VkDeviceSize> > &pieces);
+    const std::vector<std::tuple<VkDeviceSize, VkDeviceSize>> &pieces);
 
 void vulkan_flush_buffer(VkDevice device, VkDeviceMemory memory);
 void vulkan_flush_buffer_pieces(
     VkDevice device, const VkDeviceSize phys_atom_size, VkDeviceMemory memory,
-    const std::vector<std::tuple<VkDeviceSize, VkDeviceSize> > &pieces);
+    const std::vector<std::tuple<VkDeviceSize, VkDeviceSize>> &pieces);
 void vulkan_invalidate_buffer(VkDevice device, VkDeviceMemory memory);
 
 std::vector<unsigned int> blue_noise_vulkan_impl(
@@ -128,7 +128,7 @@ inline bool vulkan_get_filter(
 
   // Copy pbp buffer.
   if (changed != nullptr && changed->size() > 0) {
-    std::vector<std::tuple<VkDeviceSize, VkDeviceSize> > pieces;
+    std::vector<std::tuple<VkDeviceSize, VkDeviceSize>> pieces;
     for (auto idx : *changed) {
       pieces.emplace_back(std::make_tuple(sizeof(int), idx * sizeof(int)));
     }

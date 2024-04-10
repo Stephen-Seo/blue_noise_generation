@@ -1251,6 +1251,50 @@ image::Bl dither::blue_noise(int width, int height, int threads,
           &compute_desc_set_layout);
     }
 
+    VkDescriptorSetLayout filter_in_out_layout;
+    utility::Cleanup filter_in_out_layout_cleanup{};
+    {
+      std::array<VkDescriptorSetLayoutBinding, 3> compute_layout_bindings{};
+      compute_layout_bindings[0].binding = 0;
+      compute_layout_bindings[0].descriptorCount = 1;
+      compute_layout_bindings[0].descriptorType =
+          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      compute_layout_bindings[0].pImmutableSamplers = nullptr;
+      compute_layout_bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+      compute_layout_bindings[1].binding = 1;
+      compute_layout_bindings[1].descriptorCount = 1;
+      compute_layout_bindings[1].descriptorType =
+          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      compute_layout_bindings[1].pImmutableSamplers = nullptr;
+      compute_layout_bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+      compute_layout_bindings[2].binding = 2;
+      compute_layout_bindings[2].descriptorCount = 1;
+      compute_layout_bindings[2].descriptorType =
+          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      compute_layout_bindings[2].pImmutableSamplers = nullptr;
+      compute_layout_bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+      VkDescriptorSetLayoutCreateInfo layout_info{};
+      layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+      layout_info.bindingCount = compute_layout_bindings.size();
+      layout_info.pBindings = compute_layout_bindings.data();
+
+      if (vkCreateDescriptorSetLayout(device, &layout_info, nullptr,
+                                      &filter_in_out_layout) != VK_SUCCESS) {
+        std::clog << "WARNING: Failed to create compute descriptor set layout "
+                     "(filter_in_out)!\n";
+        goto ENDOF_VULKAN;
+      }
+      filter_in_out_layout_cleanup = utility::Cleanup(
+          [device](void *ptr) {
+            vkDestroyDescriptorSetLayout(
+                device, *((VkDescriptorSetLayout *)ptr), nullptr);
+          },
+          &filter_in_out_layout);
+    }
+
     std::array<VkDescriptorSetLayout, 2> minmax_desc_set_layouts{};
     utility::Cleanup cleanup_minmax_compute_desc_set_layout{};
     {
@@ -1341,6 +1385,31 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       }
       if (!success) {
         std::clog << "WARNING: Could not find blue_noise.glsl!\n";
+        goto ENDOF_VULKAN;
+      }
+
+      std::array<const char *, 3> filter_in_out_filenames{
+          "blue_noise_filter.glsl", "src/blue_noise_filter.glsl",
+          "../src/blue_noise_filter.glsl"};
+      success = false;
+      for (const auto filename : filter_in_out_filenames) {
+        std::ifstream ifs(filename);
+        if (ifs.good()) {
+          ifs.close();
+          std::string command(
+              "glslc -fshader-stage=compute -o compute_filter.spv ");
+          command.append(filename);
+          if (std::system(command.c_str()) != 0) {
+            std::clog << "WARNING: Failed to compile " << filename << "!\n";
+            goto ENDOF_VULKAN;
+          } else {
+            success = true;
+            break;
+          }
+        }
+      }
+      if (!success) {
+        std::clog << "WARNING: Could not find blue_noise_filter.glsl!\n";
         goto ENDOF_VULKAN;
       }
 
@@ -1453,6 +1522,94 @@ image::Bl dither::blue_noise(int width, int height, int threads,
             vkDestroyPipeline(device, *((VkPipeline *)ptr), nullptr);
           },
           &compute_pipeline);
+    }
+
+    VkPipelineLayout filter_in_out_pipeline_layout;
+    VkPipeline filter_in_out_pipeline;
+    utility::Cleanup cleanup_filter_in_out_pipeline_layout{};
+    utility::Cleanup cleanup_filter_in_out_pipeline{};
+    {
+      // Load shader.
+      std::vector<char> shader;
+      {
+        std::ifstream ifs("compute_filter.spv");
+        if (!ifs.good()) {
+          std::clog << "WARNING: Failed to find compute.spv!\n";
+          goto ENDOF_VULKAN;
+        }
+        ifs.seekg(0, std::ios_base::end);
+        auto size = ifs.tellg();
+        shader.resize(size);
+
+        ifs.seekg(0);
+        ifs.read(shader.data(), size);
+        ifs.close();
+      }
+
+      VkShaderModuleCreateInfo shader_module_create_info{};
+      shader_module_create_info.sType =
+          VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+      shader_module_create_info.codeSize = shader.size();
+      shader_module_create_info.pCode =
+          reinterpret_cast<const uint32_t *>(shader.data());
+
+      VkShaderModule compute_shader_module;
+      if (vkCreateShaderModule(device, &shader_module_create_info, nullptr,
+                               &compute_shader_module) != VK_SUCCESS) {
+        std::clog
+            << "WARNING: Failed to create shader module (filter_in_out)!\n";
+        goto ENDOF_VULKAN;
+      }
+
+      utility::Cleanup cleanup_shader_module(
+          [device](void *ptr) {
+            vkDestroyShaderModule(device, *((VkShaderModule *)ptr), nullptr);
+          },
+          &compute_shader_module);
+
+      VkPipelineShaderStageCreateInfo shader_stage_info{};
+      shader_stage_info.sType =
+          VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+      shader_stage_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+      shader_stage_info.module = compute_shader_module;
+      shader_stage_info.pName = "main";
+
+      VkPipelineLayoutCreateInfo pipeline_layout_info{};
+      pipeline_layout_info.sType =
+          VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+      pipeline_layout_info.setLayoutCount = 1;
+      pipeline_layout_info.pSetLayouts = &filter_in_out_layout;
+
+      if (vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr,
+                                 &filter_in_out_pipeline_layout) !=
+          VK_SUCCESS) {
+        std::clog
+            << "WARNING: Failed to create pipeline layout (filter_in_out)!\n";
+        goto ENDOF_VULKAN;
+      }
+      cleanup_filter_in_out_pipeline_layout = utility::Cleanup(
+          [device](void *ptr) {
+            vkDestroyPipelineLayout(device, *((VkPipelineLayout *)ptr),
+                                    nullptr);
+          },
+          &filter_in_out_pipeline_layout);
+
+      VkComputePipelineCreateInfo pipeline_info{};
+      pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+      pipeline_info.layout = filter_in_out_pipeline_layout;
+      pipeline_info.stage = shader_stage_info;
+
+      if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline_info,
+                                   nullptr,
+                                   &filter_in_out_pipeline) != VK_SUCCESS) {
+        std::clog << "WARNING: Failed to create pipeline (filter_in_out)!\n";
+        goto ENDOF_VULKAN;
+      }
+      cleanup_filter_in_out_pipeline = utility::Cleanup(
+          [device](void *ptr) {
+            vkDestroyPipeline(device, *((VkPipeline *)ptr), nullptr);
+          },
+          &filter_in_out_pipeline);
     }
 
     VkPipelineLayout minmax_compute_pipeline_layout;
@@ -1874,6 +2031,34 @@ image::Bl dither::blue_noise(int width, int height, int threads,
           &descriptor_pool);
     }
 
+    VkDescriptorPool filter_in_out_desc_pool;
+    utility::Cleanup cleanup_filter_in_out_desc_pool{};
+    {
+      VkDescriptorPoolSize pool_size{};
+      pool_size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      pool_size.descriptorCount = 3;
+
+      VkDescriptorPoolCreateInfo pool_info{};
+      pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+      pool_info.poolSizeCount = 1;
+      pool_info.pPoolSizes = &pool_size;
+      pool_info.maxSets = 1;
+
+      if (vkCreateDescriptorPool(device, &pool_info, nullptr,
+                                 &filter_in_out_desc_pool) != VK_SUCCESS) {
+        std::clog
+            << "WARNING: Failed to create descriptor pool (filter_in_out)!\n";
+        goto ENDOF_VULKAN;
+      }
+
+      cleanup_filter_in_out_desc_pool = utility::Cleanup(
+          [device](void *ptr) {
+            vkDestroyDescriptorPool(device, *((VkDescriptorPool *)ptr),
+                                    nullptr);
+          },
+          &filter_in_out_desc_pool);
+    }
+
     VkDescriptorPool minmax_descriptor_pool;
     utility::Cleanup cleanup_minmax_descriptor_pool{};
     {
@@ -1966,6 +2151,62 @@ image::Bl dither::blue_noise(int width, int height, int threads,
       other_info.offset = 0;
       other_info.range = VK_WHOLE_SIZE;
       descriptor_writes[3].pBufferInfo = &other_info;
+
+      vkUpdateDescriptorSets(device, descriptor_writes.size(),
+                             descriptor_writes.data(), 0, nullptr);
+    }
+
+    VkDescriptorSet filter_in_out_desc_set;
+    {
+      VkDescriptorSetAllocateInfo alloc_info{};
+      alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+      alloc_info.descriptorPool = descriptor_pool;
+      alloc_info.descriptorSetCount = 1;
+      alloc_info.pSetLayouts = &filter_in_out_layout;
+
+      if (vkAllocateDescriptorSets(device, &alloc_info,
+                                   &filter_in_out_desc_set) != VK_SUCCESS) {
+        std::clog << "WARNING: Failed to allocate descriptor set!\n";
+        goto ENDOF_VULKAN;
+      }
+
+      std::array<VkWriteDescriptorSet, 3> descriptor_writes{};
+
+      descriptor_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_writes[0].dstSet = filter_in_out_desc_set;
+      descriptor_writes[0].dstBinding = 0;
+      descriptor_writes[0].dstArrayElement = 0;
+      descriptor_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      descriptor_writes[0].descriptorCount = 1;
+      VkDescriptorBufferInfo precomputed_info{};
+      precomputed_info.buffer = precomputed_buf;
+      precomputed_info.offset = 0;
+      precomputed_info.range = VK_WHOLE_SIZE;
+      descriptor_writes[0].pBufferInfo = &precomputed_info;
+
+      descriptor_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_writes[1].dstSet = filter_in_out_desc_set;
+      descriptor_writes[1].dstBinding = 1;
+      descriptor_writes[1].dstArrayElement = 0;
+      descriptor_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      descriptor_writes[1].descriptorCount = 1;
+      VkDescriptorBufferInfo max_in_buf_info{};
+      precomputed_info.buffer = max_in_buf;
+      precomputed_info.offset = 0;
+      precomputed_info.range = VK_WHOLE_SIZE;
+      descriptor_writes[1].pBufferInfo = &max_in_buf_info;
+
+      descriptor_writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_writes[2].dstSet = filter_in_out_desc_set;
+      descriptor_writes[2].dstBinding = 2;
+      descriptor_writes[2].dstArrayElement = 0;
+      descriptor_writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      descriptor_writes[2].descriptorCount = 1;
+      VkDescriptorBufferInfo other_info{};
+      precomputed_info.buffer = other_buf;
+      precomputed_info.offset = 0;
+      precomputed_info.range = VK_WHOLE_SIZE;
+      descriptor_writes[2].pBufferInfo = &other_info;
 
       vkUpdateDescriptorSets(device, descriptor_writes.size(),
                              descriptor_writes.data(), 0, nullptr);
