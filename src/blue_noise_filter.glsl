@@ -20,9 +20,7 @@ int twoToOne(int x, int y, int width, int height) {
 
 layout(binding = 0) readonly buffer PreComputed { float precomputed[]; };
 
-layout(binding = 1) writeonly buffer FilterInOut {
-  FloatAndIndex filter_in_out[];
-};
+layout(binding = 1) buffer FilterInOut { FloatAndIndex filter_in_out[]; };
 
 layout(binding = 2) readonly buffer Other {
   int width;
@@ -38,7 +36,7 @@ void main() {
     return;
   }
 
-  filter_in_out[index].idx = index;
+  // filter_in_out[index].idx = int(index);
 
   int x = int(index % width);
   int y = int(index / width);

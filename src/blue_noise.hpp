@@ -88,7 +88,9 @@ std::vector<unsigned int> blue_noise_vulkan_impl(
     VkBuffer min_in_buf, VkBuffer max_out_buf, VkBuffer min_out_buf,
     VkBuffer state_buf, const int width, const int height,
     VkBuffer minmax_staging_buf, VkDeviceMemory minmax_staging_buf_mem,
-    void *minmax_mapped);
+    void *minmax_mapped, VkPipeline filter_in_out_pipeline,
+    VkPipelineLayout filter_in_out_pipeline_layout,
+    VkDescriptorSet filter_in_out_desc_set);
 
 std::vector<float> vulkan_buf_to_vec(float *mapped, unsigned int size);
 
@@ -201,6 +203,19 @@ std::optional<std::pair<int, int>> vulkan_minmax(
     VkBuffer state_buf, const int size, const float *const filter_mapped,
     const std::vector<bool> &pbp, VkBuffer staging_buf,
     VkDeviceMemory staging_buf_mem, void *staging_mapped);
+
+std::optional<std::pair<int, int>> vulkan_filter_and_minmax(
+    VkDevice device, VkPhysicalDevice phys_dev, VkCommandBuffer command_buffer,
+    VkCommandPool command_pool, VkQueue queue,
+    VkPipeline filter_in_out_pipeline,
+    VkPipelineLayout filter_in_out_pipeline_layout,
+    VkDescriptorSet filter_in_out_desc_set, VkPipeline minmax_pipeline,
+    VkPipelineLayout minmax_pipeline_layout,
+    std::array<VkDescriptorSet, 2> minmax_desc_sets, VkBuffer max_in_buf,
+    VkBuffer min_in_buf, VkBuffer max_out_buf, VkBuffer min_out_buf,
+    const int size, const std::size_t global_size, std::vector<bool> &pbp,
+    VkBuffer staging_buf, VkDeviceMemory staging_buf_mem, void *staging_mapped,
+    bool reversed_pbp);
 
 #endif
 
