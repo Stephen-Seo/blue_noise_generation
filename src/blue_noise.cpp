@@ -284,52 +284,6 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
   std::vector<bool> pbp = random_noise(size, pixel_count);
   bool reversed_pbp = false;
 
-  VkBuffer staging_pbp_buffer;
-  VkDeviceMemory staging_pbp_buffer_mem;
-  if (!internal::vulkan_create_buffer(device, phys_device, size * sizeof(int),
-                                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                          VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
-                                      staging_pbp_buffer,
-                                      staging_pbp_buffer_mem)) {
-    std::clog << "get_filter ERROR: Failed to create staging pbp buffer!\n";
-    return {};
-  }
-  utility::Cleanup cleanup_staging_pbp_buf(
-      [device](void *ptr) {
-        vkDestroyBuffer(device, *((VkBuffer *)ptr), nullptr);
-      },
-      &staging_pbp_buffer);
-  utility::Cleanup cleanup_staging_pbp_buf_mem(
-      [device](void *ptr) {
-        vkFreeMemory(device, *((VkDeviceMemory *)ptr), nullptr);
-      },
-      &staging_pbp_buffer_mem);
-
-  VkBuffer staging_filter_buffer;
-  VkDeviceMemory staging_filter_buffer_mem;
-  if (!internal::vulkan_create_buffer(device, phys_device, size * sizeof(int),
-                                      VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                          VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
-                                      staging_filter_buffer,
-                                      staging_filter_buffer_mem)) {
-    std::clog << "get_filter ERROR: Failed to create staging pbp buffer!\n";
-    return {};
-  }
-  utility::Cleanup cleanup_staging_filter_buf(
-      [device](void *ptr) {
-        vkDestroyBuffer(device, *((VkBuffer *)ptr), nullptr);
-      },
-      &staging_filter_buffer);
-  utility::Cleanup cleanup_staging_filter_buf_mem(
-      [device](void *ptr) {
-        vkFreeMemory(device, *((VkDeviceMemory *)ptr), nullptr);
-      },
-      &staging_filter_buffer_mem);
-
-  std::vector<std::size_t> changed_indices;
-
   VkDeviceSize phys_atom_size;
   {
     VkPhysicalDeviceProperties props;
@@ -381,8 +335,6 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 
     pbp[max] = false;
 
-    changed_indices.push_back(max);
-
     // get second buffer's min
     int second_min;
     vulkan_minmax_opt = vulkan_filter_and_minmax(
@@ -399,11 +351,9 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
 
     if (second_min == max) {
       pbp[max] = true;
-      changed_indices.push_back(max);
       break;
     } else {
       pbp[second_min] = true;
-      changed_indices.push_back(second_min);
     }
 
 #ifndef NDEBUG
@@ -452,7 +402,6 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
       std::tie(std::ignore, max) = vulkan_minmax_opt.value();
       pbp.at(max) = false;
       dither_array.at(max) = i;
-      changed_indices.push_back(max);
 #ifndef NDEBUG
       if (set.find(max) != set.end()) {
         std::cout << "\nWARNING: Reusing index " << max << '\n';
@@ -485,7 +434,6 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
     std::tie(min, std::ignore) = vulkan_minmax_opt.value();
     pbp.at(min) = true;
     dither_array.at(min) = i;
-    changed_indices.push_back(min);
 #ifndef NDEBUG
     if (set.find(min) != set.end()) {
       std::cout << "\nWARNING: Reusing index " << min << '\n';
@@ -503,7 +451,6 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
     std::cout << i << ' ';
 #endif
     if (first_reversed_run) {
-      changed_indices.clear();
       first_reversed_run = false;
     }
     auto vulkan_minmax_opt = vulkan_filter_and_minmax(
@@ -519,7 +466,6 @@ std::vector<unsigned int> dither::internal::blue_noise_vulkan_impl(
     std::tie(std::ignore, max) = vulkan_minmax_opt.value();
     pbp.at(max) = true;
     dither_array.at(max) = i;
-    changed_indices.push_back(max);
 #ifndef NDEBUG
     if (set.find(max) != set.end()) {
       std::cout << "\nWARNING: Reusing index " << max << '\n';
